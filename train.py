@@ -19,7 +19,7 @@ except ImportError:
     wandb = None
 
 
-import nsml
+#import nsml
 
 from dataset import MultiResolutionDataset
 from distributed import (
@@ -402,7 +402,7 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
                 )
             )
 
-            nsml.report(summary=True, step=i, G_loss=g_loss_val, D_loss=d_loss_val, R1_loss=r1_val, Path_loss=path_loss_val, mean_path=mean_path_length_avg, augment=ada_aug_p)
+            #nsml.report(summary=True, step=i, G_loss=g_loss_val, D_loss=d_loss_val, R1_loss=r1_val, Path_loss=path_loss_val, mean_path=mean_path_length_avg, augment=ada_aug_p)
 
             if wandb and args.wandb:
                 wandb.log(
