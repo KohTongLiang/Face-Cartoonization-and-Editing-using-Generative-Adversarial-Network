@@ -345,7 +345,7 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
             for layer in range(args.structure_loss):
                 _, latent_med_sor = generator_source(noise, swap=True, swap_layer_num=layer+1)
                 _, latent_med_tar = generator(noise, swap=True, swap_layer_num=layer+1)
-                g_loss = g_loss + F.mse_loss(latent_med_tar, latent_med_sor)
+                g_loss = g_loss + F.mse_loss(latent_med_tar, latent_med_sor) # for each layer calculate mse loss between source and target rgb ouputs
 
                 
         generator.zero_grad()
