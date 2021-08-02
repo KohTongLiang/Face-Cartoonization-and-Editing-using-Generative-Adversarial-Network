@@ -346,6 +346,7 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
                 _, latent_med_sor = generator_source(noise, swap=True, swap_layer_num=layer+1)
                 _, latent_med_tar = generator(noise, swap=True, swap_layer_num=layer+1)
                 g_loss = g_loss + F.mse_loss(latent_med_tar, latent_med_sor) # for each layer calculate mse loss between source and target rgb ouputs
+                # g_loss = g_loss + (2 * F.mse_loss(latent_med_tar, latent_med_sor)) # hyperparameter 2 higher importance of source domain
 
                 
         generator.zero_grad()
@@ -445,9 +446,6 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
                     },
                     f"{save_dir}/checkpoints/{str(i).zfill(6)}.pt",
                 )
-                
-
-
 
 if __name__ == "__main__":
     device = "cuda"

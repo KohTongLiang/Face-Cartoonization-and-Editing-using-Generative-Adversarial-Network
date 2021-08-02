@@ -9,6 +9,7 @@ from torch.nn import functional as F
 from torch.autograd import Function
 
 from op import FusedLeakyReLU, fused_leaky_relu, upfirdn2d, conv2d_gradfix
+from torchvision.utils import save_image
 
 
 class PixelNorm(nn.Module):
@@ -425,8 +426,12 @@ class Generator(nn.Module):
         # Mapping Network
         # ------------------- 
        
+        # pixel normalization. Normalize feature vector in each pixel to unit length.
+        # Applied after convolutional layers in generator. Prevent signal magnitudes from
+        # spiraling out of control
         layers = [PixelNorm()]
 
+        # fully collected network after normalization
         for i in range(n_mlp):
             layers.append(
                 EqualLinear(
@@ -595,9 +600,6 @@ class Generator(nn.Module):
                 latent2 = styles[1].unsqueeze(1).repeat(1, self.n_latent - inject_index, 1)
                 latent = torch.cat([latent1, latent2], 1)
             
-
-
-
         out = self.input(latent)
         out = self.conv1(out, latent[:, 0], noise=noise[0])
 
@@ -617,8 +619,12 @@ class Generator(nn.Module):
                 save_swap_layer = out
                 if swap_layer_tensor is not None:
                     out = swap_layer_tensor
+            
 
             skip = to_rgb(out, latent[:, i + 2], skip)
+
+            # debugging
+            #save_image(out, f'./asset/layers/layer-{i}.png')
 
             i += 2
 
@@ -630,7 +636,6 @@ class Generator(nn.Module):
             return image, save_swap_layer
         else:
             return image, None
-
 
 
 class ConvLayer(nn.Sequential):
