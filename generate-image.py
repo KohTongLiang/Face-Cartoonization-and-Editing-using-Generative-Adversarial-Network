@@ -1,5 +1,6 @@
 import os
 import torch
+import json
 import cv2 
 import numpy as np
 import PIL.Image as pilimg
@@ -9,12 +10,19 @@ from utils import imshow, tensor2image
 from model import Generator
 
 if __name__ == "__main__":
-    #torch.cuda.set_device(1)
-    device='cuda'
-    n_sample=5
+    print("Loading Config")
+
+    # load config file
+    config = json.load(open('./config/config.json'))
+
+    # basic configuration
+    device = config['cuda']
+    n_sample = 5
     truncation = 0.7
 
-    # =============================================
+    # grab list of target networks
+    target_networks = config['networks']
+    target_generators = []
 
     # FFHQ Source Generator
     network1 = 'ffhq256'  #@param ['ffhq256', 'NaverWebtoon', 'NaverWebtoon_StructureLoss', 'NaverWebtoon_FreezeSG', 'Romance101', 'TrueBeauty', 'Disney', 'Disney_StructureLoss', 'Disney_FreezeSG', 'Metface_StructureLoss', 'Metface_FreezeSG']
@@ -25,54 +33,36 @@ if __name__ == "__main__":
     g1.load_state_dict(network1["g_ema"], strict=False)
     trunc1 = g1.mean_latent(4096)
 
-    # NaverWebtoon Structure Loss
-    network3 = 'NaverWebtoon_StructureLoss' #@param ['ffhq256', 'NaverWebtoon', 'NaverWebtoon_StructureLoss', 'NaverWebtoon_FreezeSG', 'Romance101', 'TrueBeauty', 'Disney', 'Disney_StructureLoss', 'Disney_FreezeSG', 'Metface_StructureLoss', 'Metface_FreezeSG']
-    network3 = f'./networks/{network3}.pt'
-    network3 = torch.load(network3)
+    # Create generator of each target networks
+    for target in target_networks:
+        print(f'Creating generator for {target}')
 
-    g3 = Generator(256, 512, 8, channel_multiplier=2).to(device)
-    g3.load_state_dict(network3["g_ema"], strict=False)
-    trunc3 = g3.mean_latent(4096)
+        network = target
+        network = f'./networks/{network}.pt'
+        network = torch.load(network)
 
-    # Danbooru trained with 2* relative importance of source domain
-    network5 = '100000'
-    network5 = f'./expr/checkpoints/{network5}.pt'
-    network5 = torch.load(network5)
-
-    g5 = Generator(256, 512, 8, channel_multiplier=2).to(device)
-    g5.load_state_dict(network5['g_ema'], strict=False)
-    trunc5 = g5.mean_latent(4096)
-
-    # Kaggle Structure Loss
-    network7 = 'Custom_NaverWebtoon'
-    network7 = f'./networks/{network7}.pt'
-    network7 = torch.load(network7)
-
-    g7 = Generator(256, 512, 8, channel_multiplier=2).to(device)
-    g7.load_state_dict(network7['g_ema'], strict=False)
-    trunc7 = g7.mean_latent(4096)
-
-    # NaverWebtoon_FreezeSG
-    network8 = 'Danbooru_FreezeSG'
-    network8 = f'./networks/{network8}.pt'
-    network8 = torch.load(network8)
-
-    g8 = Generator(256, 512, 8, channel_multiplier=2).to(device)
-    g8.load_state_dict(network8['g_ema'], strict=False)
-    trunc8 = g8.mean_latent(4096)
-
-    # =============================================
+        g = Generator(256, 512, 8, channel_multiplier=2).to(device)
+        g.load_state_dict(network['g_ema'], strict=False)
+        trunc = g.mean_latent(4096)
+        target_generators.append({ 'gen' : g, 'trunc' : trunc })
 
     # directory to save image
-    outdir = 'results_020821_noswap' #@param {type:"string"}
+    # outdir = 'results_030821' #@param {type:"string"}
+    outdir = config['outdir']
     if not os.path.isdir(f'{outdir}'):
         os.makedirs(f'./asset/{outdir}', exist_ok=True)
 
     imgs = []
-    number_of_img = 4 #@param {type:"slider", min:0, max:30, step:1}
-    number_of_step = 6 #@param {type:"slider", min:0, max:10, step:1
-    swap = True #@param {type:"boolean"}
-    swap_layer_num = 2 #@param {type:"slider", min:1, max:6, step:1}
+    number_of_img = config['number_of_img']
+    number_of_step = config['number_of_step']
+    swap = config['swap']
+    swap_layer_num = config['swap_layer_num']
+    # number_of_img = 4 #@param {type:"slider", min:0, max:30, step:1}
+    # number_of_step = 6 #@param {type:"slider", min:0, max:10, step:1
+    # swap = True #@param {type:"boolean"}
+    # swap_layer_num = 2 #@param {type:"slider", min:1, max:6, step:1}
+
+    print("Beginning Generations")
 
     with torch.no_grad():
 
@@ -87,6 +77,7 @@ if __name__ == "__main__":
             latent2 = g1.get_latent(latent2)
 
             for j in range(number_of_step):
+                img_gens = []
 
                 latent_interp = latent1 + (latent2-latent1) * float(j/(number_of_step-1))
 
@@ -95,33 +86,22 @@ if __name__ == "__main__":
                                         truncation=0.7,
                                         truncation_latent=trunc1,
                                         swap=swap, swap_layer_num=swap_layer_num,
-                                        randomize_noise=False)
-                imgs_gen3, _ = g3([latent_interp],
+                                        randomize_noise=False,
+                                        generator_name=f'ffhq-img-{i}-step-{j}')
+
+                img_gens.append(imgs_gen1)
+
+                for gen in target_generators:
+                    imgs_gen, _ = gen['gen']([latent_interp],
                                         input_is_latent=True,                                     
                                         truncation=0.7,
-                                        truncation_latent=trunc3,
+                                        truncation_latent=gen['trunc'],
                                         swap=swap, swap_layer_num=swap_layer_num, swap_layer_tensor=save_swap_layer,
+                                        generator_name=f'Gen2-img-{i}-step-{j}',
                                         )
-                imgs_gen5, _ = g5([latent_interp],
-                                        input_is_latent=True,                                     
-                                        truncation=0.7,
-                                        truncation_latent=trunc5,
-                                        swap=swap, swap_layer_num=swap_layer_num, swap_layer_tensor=save_swap_layer,
-                                        )
-                imgs_gen7, _ = g7([latent_interp],
-                                        input_is_latent=True,
-                                        truncation=0.7,
-                                        truncation_latent=trunc7,
-                                        swap=swap, swap_layer_num=swap_layer_num, swap_layer_tensor=save_swap_layer,
-                                        )
-                imgs_gen8, _ = g8([latent_interp],
-                                        input_is_latent=True,                                     
-                                        truncation=0.7,
-                                        truncation_latent=trunc8,
-                                        swap=swap, swap_layer_num=swap_layer_num, swap_layer_tensor=save_swap_layer,
-                                        )
+                    img_gens.append(imgs_gen)
                                 
-                grid = make_grid(torch.cat([imgs_gen1, imgs_gen3, imgs_gen5, imgs_gen7, imgs_gen8], 0),
+                grid = make_grid(torch.cat(img_gens, 0),
                                     nrow=5,
                                     normalize=True,
                                     range=(-1,1),
@@ -133,4 +113,4 @@ if __name__ == "__main__":
 
             latent1 = latent2
 
-        print('done')
+        print('Complete')

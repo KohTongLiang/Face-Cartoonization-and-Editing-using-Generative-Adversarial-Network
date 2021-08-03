@@ -1,0 +1,13 @@
+{
+    "cuda" : "cuda",
+    "outdir" : "results_040821",
+    "number_of_img" : 4,
+    "number_of_step" : 6,
+    "swap" : true,
+    "swap_layer_num" : 2,
+    "networks" : [
+        "NaverWebtoon_StructureLoss",
+        "Danbooru_Structure_Loss4",
+        "Custom_NaverWebtoon"
+    ]
+}
