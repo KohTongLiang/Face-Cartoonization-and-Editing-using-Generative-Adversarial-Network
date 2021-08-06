@@ -1,7 +1,9 @@
 ## Trained Models
 
 FFHQ: https://drive.google.com/file/d/1NrIQSs0DLeBVMOegg7QUHb08qFgDQy8_/view?usp=sharing
+
 NaverWebtoon Structure Loss: https://drive.google.com/file/d/1kJ39AW6k_dlGYdh69ntOE7Jjj2ijivV_/view?usp=sharing
+
 Anime Structure Loss (06-08-2021): https://drive.google.com/file/d/18AOOhYBHjmqyrEUNlIeMxfkQsh4HR927/view?usp=sharing
 
 Store the .pt files in /networks
