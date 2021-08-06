@@ -25,7 +25,7 @@ if __name__ == "__main__":
     target_generators = []
 
     # FFHQ Source Generator
-    network1 = 'ffhq256'  #@param ['ffhq256', 'NaverWebtoon', 'NaverWebtoon_StructureLoss', 'NaverWebtoon_FreezeSG', 'Romance101', 'TrueBeauty', 'Disney', 'Disney_StructureLoss', 'Disney_FreezeSG', 'Metface_StructureLoss', 'Metface_FreezeSG']
+    network1 = config['source_domain']  #@param ['ffhq256', 'NaverWebtoon', 'NaverWebtoon_StructureLoss', 'NaverWebtoon_FreezeSG', 'Romance101', 'TrueBeauty', 'Disney', 'Disney_StructureLoss', 'Disney_FreezeSG', 'Metface_StructureLoss', 'Metface_FreezeSG']
     network1 = f'./networks/{network1}.pt' 
     network1 = torch.load(network1)
 
@@ -44,7 +44,7 @@ if __name__ == "__main__":
         g = Generator(256, 512, 8, channel_multiplier=2).to(device)
         g.load_state_dict(network['g_ema'], strict=False)
         trunc = g.mean_latent(4096)
-        target_generators.append({ 'gen' : g, 'trunc' : trunc })
+        target_generators.append({ 'gen' : g, 'trunc' : trunc, 'gen_name' : target })
 
     # directory to save image
     # outdir = 'results_030821' #@param {type:"string"}
@@ -97,7 +97,7 @@ if __name__ == "__main__":
                                         truncation=0.7,
                                         truncation_latent=gen['trunc'],
                                         swap=swap, swap_layer_num=swap_layer_num, swap_layer_tensor=save_swap_layer,
-                                        generator_name=f'Gen2-img-{i}-step-{j}',
+                                        generator_name=f'{gen["gen_name"]}-img-{i}-step-{j}',
                                         )
                     img_gens.append(imgs_gen)
                                 
