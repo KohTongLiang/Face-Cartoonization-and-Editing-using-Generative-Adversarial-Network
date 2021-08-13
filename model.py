@@ -547,7 +547,9 @@ class Generator(nn.Module):
 
         swap=False,
         swap_layer_tensor=None,
-        swap_layer_num=1, 
+        swap_layer_num=1,
+
+        generator_name=None,
     ):
 
         if not input_is_latent:
@@ -619,12 +621,12 @@ class Generator(nn.Module):
                 save_swap_layer = out
                 if swap_layer_tensor is not None:
                     out = swap_layer_tensor
-            
+           
 
             skip = to_rgb(out, latent[:, i + 2], skip)
 
             # debugging
-            #save_image(out, f'./asset/layers/layer-{i}.png')
+            # save_image(skip, f'./asset/layers/{generator_name}-layer-{i}.png') 
 
             i += 2
 

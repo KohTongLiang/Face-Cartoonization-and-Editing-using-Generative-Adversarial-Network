@@ -1,14 +1,14 @@
 {
     "cuda" : "cuda",
-    "outdir" : "results_060821_ls1",
+    "outdir" : "results_130821_l2",
     "number_of_img" : 15,
-    "number_of_step" : 10,
+    "number_of_step" : 5,
     "swap" : true,
-    "swap_layer_num" : 1,
-    "source_domain" : "256Anime",
+    "swap_layer_num" : 2,
+    "source_domain" : "ffhq256",
     "networks" : [
         "NaverWebtoon_StructureLoss",
-        "Custom_NaverWebtoon",
-        "256Anime"
+        "256Anime_430000",
+        "test_068000"
     ]
 }

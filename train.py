@@ -127,7 +127,6 @@ def set_grad_none(model, targets):
 
 
 def train(args, loader, generator, generator_source, discriminator, g_optim, d_optim, g_ema, device):
-
     save_dir = "expr"
     os.makedirs(save_dir, 0o777, exist_ok=True)
     os.makedirs(save_dir + "/checkpoints", 0o777, exist_ok=True)
@@ -184,8 +183,6 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
         #-------------------------
         # Update Discriminator
         #-------------------------
-
-
         # Freeze !!!
         if args.freezeG > 0 and args.freezeD > 0:
             # G
@@ -197,7 +194,6 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
             for layer in range(args.freezeD):
                 requires_grad(discriminator, True, target_layer=f'convs.{discriminator.log_size-2-layer}')
             requires_grad(discriminator, True, target_layer=f'final_') #final_conv, final_linear
-
         elif args.freezeG > 0 :
             # G
             for layer in range(args.freezeG):
@@ -206,7 +202,6 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
                 requires_grad(generator, False, target_layer=f'to_rgbs.{generator.log_size-3-layer}')
             # D
             requires_grad(discriminator, True)
-
         elif args.freezeD > 0 :
             # G
             requires_grad(generator, False)
@@ -214,7 +209,6 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
             for layer in range(args.freezeD):
                 requires_grad(discriminator, True, target_layer=f'convs.{discriminator.log_size-2-layer}')
             requires_grad(discriminator, True, target_layer=f'final_') #final_conv, final_linear
-
         else :
             # G
             requires_grad(generator, False)
@@ -225,6 +219,7 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
 
         noise = mixing_noise(args.batch, args.latent, args.mixing, device)
 
+        # FreezeSG
         if args.freezeStyle >= 0:            
             _, latent = generator_source(noise, return_latents=True)
             fake_img, _ = generator(noise, inject_index=args.freezeStyle, put_latent = latent)
@@ -322,8 +317,7 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
             requires_grad(discriminator, False)
 
         #--------------------------
-
-
+        
         noise = mixing_noise(args.batch, args.latent, args.mixing, device)
 
         if args.freezeStyle >= 0:            
@@ -345,8 +339,8 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
             for layer in range(args.structure_loss):
                 _, latent_med_sor = generator_source(noise, swap=True, swap_layer_num=layer+1)
                 _, latent_med_tar = generator(noise, swap=True, swap_layer_num=layer+1)
-                g_loss = g_loss + F.mse_loss(latent_med_tar, latent_med_sor) # for each layer calculate mse loss between source and target rgb ouputs
-                # g_loss = g_loss + (2 * F.mse_loss(latent_med_tar, latent_med_sor)) # hyperparameter 2 higher importance of source domain
+                #g_loss = g_loss + F.mse_loss(latent_med_tar, latent_med_sor) # for each layer calculate mse loss between source and target rgb ouputs
+                g_loss = g_loss + (10 * F.mse_loss(latent_med_tar, latent_med_sor)) # hyperparameter 2 higher importance of source domain
 
                 
         generator.zero_grad()
