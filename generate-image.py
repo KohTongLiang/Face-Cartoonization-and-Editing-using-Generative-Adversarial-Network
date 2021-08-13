@@ -200,7 +200,7 @@ def style_mixing():
         network1 = torch.load(network1)
 
         generator1 = Generator(256, 512, 8, channel_multiplier=2).to(device)
-        generator1.load_state_dict(network1["g_ema"], strict=False)
+        generator1.load_state_dict(network1["g"], strict=False)
 
         for i in range(number_of_sample):
             # latent1
@@ -208,9 +208,21 @@ def style_mixing():
             # torch.manual_seed(seed1)
             latent1 = torch.randn(1, 14, 512, device=device)
             latent1 = generator1.get_latent(latent1)
+            latent2 = torch.randn(1, 14, 512, device=device)
+            latent2 = generator1.get_latent(latent2)
             trunc1 = generator1.mean_latent(4096)
 
-            img_sample, latent = generator1([latent1], input_is_latent=True, return_latents=True)
+            # latent mixing
+            latent_mixing1 = 15 #@param {type:"slider", min:0, max:15, step:1}
+            latent_mixing2 = 15 #@param {type:"slider", min:0, max:15, step:1}
+
+            latent3 = torch.cat([latent1[:,:latent_mixing1,:], latent2[:,latent_mixing1:latent_mixing2,:], latent1[:,latent_mixing2:,:]], dim = 1)
+            # latent4 = torch.cat([latent1[:,:,:latent_mixing2], latent2[:,:,latent_mixing2:]], dim = 2)
+
+            # Latent !
+            mixed_latent = torch.cat([latent1, latent2, latent3], dim = 0)
+
+            img_sample, latent = generator1([mixed_latent], input_is_latent=True, return_latents=True)
             img_gens.append({ 'image' : img_sample, 'latent' : latent, 'trunc' : trunc1 })
             img.append(img_sample)
 
@@ -222,7 +234,9 @@ def style_mixing():
                 latent2 = style_to_change['latent']
                 
                 #mixed_latent = torch.tensor(latent2 , latent1)
-                mixed, _ = generator1([latent1 + latent2], input_is_latent=True)
+                
+
+                mixed, _ = generator1([latent1], truncation=0.7, truncation_latent=style_to_change['trunc'], input_is_latent=True)
                 img.append(mixed)
             
                 i += 1

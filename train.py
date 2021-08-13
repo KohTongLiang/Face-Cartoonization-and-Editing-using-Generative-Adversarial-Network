@@ -127,7 +127,8 @@ def set_grad_none(model, targets):
 
 
 def train(args, loader, generator, generator_source, discriminator, g_optim, d_optim, g_ema, device):
-    save_dir = "expr"
+    # create directories
+    save_dir = args.expr_dir
     os.makedirs(save_dir, 0o777, exist_ok=True)
     os.makedirs(save_dir + "/checkpoints", 0o777, exist_ok=True)
 
@@ -151,7 +152,6 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
     if args.distributed:
         g_module = generator.module
         d_module = discriminator.module
-
     else:
         g_module = generator
         d_module = discriminator
@@ -165,17 +165,16 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
 
     sample_z = torch.randn(args.n_sample, args.latent, device=device)
 
+    # main training loop
     for idx in pbar:
         i = idx + args.start_iter
 
         if i > args.iter:
             print("Done!")
-
             break
 
         real_img = next(loader)
         real_img = real_img.to(device)
-
 
         requires_grad(generator, False)
         requires_grad(discriminator, False)
@@ -225,16 +224,13 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
             fake_img, _ = generator(noise, inject_index=args.freezeStyle, put_latent = latent)
         elif args.freezeFC:      
             _, latent = generator_source(noise, return_latents=True)
-            fake_img, _ = generator(noise, freezeFC = latent)           
+            fake_img, _ = generator(noise, freezeFC = latent)
         else:
             fake_img, _ = generator(noise)
-
-
 
         if args.augment:
             real_img_aug, _ = augment(real_img, ada_aug_p)
             fake_img, _ = augment(fake_img, ada_aug_p)
-
         else:
             real_img_aug = real_img
 
@@ -307,9 +303,7 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
             # D
             for layer in range(args.freezeD):
                 requires_grad(discriminator, False, target_layer=f'convs.{discriminator.log_size-2-layer}')
-            requires_grad(discriminator, False, target_layer=f'final_') #final_conv, final_linear
-
-
+            requires_grad(discriminator, False, target_layer=f'final_') # final_conv, final_linear
         else :
             # G
             requires_grad(generator, True)
@@ -323,6 +317,10 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
         if args.freezeStyle >= 0:            
             fake_img, latent = generator_source(noise, return_latents=True)
             fake_img, _ = generator(noise, inject_index=args.freezeStyle, put_latent = latent)
+        # layer swapping method
+        elif args.layerSwap > 0:
+            fake_img, save_swap_layer = generator_source(noise, swap=True, swap_layer_num=args.layerSwap)
+            fake_img, _ = generator(noise, swap=True, swap_layer_num=args.layerSwap, swap_layer_tensor=save_swap_layer)
         else:
             fake_img, _ = generator(noise)
 
@@ -335,11 +333,12 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
         loss_dict["g"] = g_loss
 
 
+        # Structure Loss
         if args.structure_loss >= 0:
             for layer in range(args.structure_loss):
                 _, latent_med_sor = generator_source(noise, swap=True, swap_layer_num=layer+1)
                 _, latent_med_tar = generator(noise, swap=True, swap_layer_num=layer+1)
-                #g_loss = g_loss + F.mse_loss(latent_med_tar, latent_med_sor) # for each layer calculate mse loss between source and target rgb ouputs
+                # g_loss = g_loss + F.mse_loss(latent_med_tar, latent_med_sor) # for each layer calculate mse loss between source and target rgb ouputs
                 g_loss = g_loss + (10 * F.mse_loss(latent_med_tar, latent_med_sor)) # hyperparameter 2 higher importance of source domain
 
                 
@@ -442,8 +441,6 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
                 )
 
 if __name__ == "__main__":
-    device = "cuda"
-
     parser = argparse.ArgumentParser(description="StyleGAN2 trainer")
 
     parser.add_argument("--path", type=str, help="path to the lmdb dataset")
@@ -568,8 +565,27 @@ if __name__ == "__main__":
         action="store_true",
         help="freezeFC",
         default=False
-    ) 
+    )
+    # define gpu no.
+    parser.add_argument(
+        "--gpu",
+        default='cuda'
+    )
+    # ours
+    parser.add_argument(
+        "--layerSwap",
+        type=int,
+        default=0
+    )
+    # experiment directory
+    parser.add_argument(
+        "--expr_dir",
+        default='expr'
+    )
+
     args = parser.parse_args()
+
+    device = args.gpu
 
     n_gpu = int(os.environ["WORLD_SIZE"]) if "WORLD_SIZE" in os.environ else 1
     args.distributed = n_gpu > 1
