@@ -30,17 +30,18 @@ e.g) ["NaverWebtoon_StructureLoss", "Danbooru_Structure_Loss4", "Custom_NaverWeb
 ## Training
 
 ### Layer Swapping
-### ex) python train.py --batch=8 --ckpt=ffhq256.pt --layerSwap=2 --freezeD=3 --augment --path=LMDB_PATH
+ex) python train.py --batch=8 --ckpt=ffhq256.pt --layerSwap=2 --freezeD=3 --augment --path=LMDB_PATH
 
 ### StyleGAN2
 python train.py --batch BATCH_SIZE LMDB_PATH
-### ex) python train.py --batch=8 --ckpt=ffhq256.pt --freezeG=4 --freezeD=3 --augment --path=LMDB_PATH
+
+ex) python train.py --batch=8 --ckpt=ffhq256.pt --freezeG=4 --freezeD=3 --augment --path=LMDB_PATH
 
 ### StructureLoss
-### ex) python train.py --batch=8 --ckpt=ffhq256.pt --structure_loss=2 --freezeD=3 --augment --path=LMDB_PATH
+ex) python train.py --batch=8 --ckpt=ffhq256.pt --structure_loss=2 --freezeD=3 --augment --path=LMDB_PATH
 
 ### FreezeSG
-### ex) python train.py --batch=8 --ckpt=ffhq256.pt --freezeStyle=2 --freezeG=4 --freezeD=3 --augment --path=LMDB_PATH
+ex) python train.py --batch=8 --ckpt=ffhq256.pt --freezeStyle=2 --freezeG=4 --freezeD=3 --augment --path=LMDB_PATH
 
 
 ### Distributed Settings

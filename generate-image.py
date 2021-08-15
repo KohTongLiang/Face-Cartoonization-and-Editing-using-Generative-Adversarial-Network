@@ -20,6 +20,7 @@ def image2image():
 
     # basic configuration
     device = config['cuda']
+    print(f'Running on cuda:{torch.cuda.current_device()}')
     truncation = 0.7
 
     # grab list of target networks
@@ -42,10 +43,11 @@ def image2image():
 
         network = target
         network = f'./networks/{network}.pt'
-        network = torch.load(network)
+        network = torch.load(network, map_location='cpu')
 
         g = Generator(256, 512, 8, channel_multiplier=2).to(device)
         g.load_state_dict(network['g_ema'], strict=False)
+        g.to(device)
         trunc = g.mean_latent(4096)
         target_generators.append({ 'gen' : g, 'trunc' : trunc, 'gen_name' : target })
 

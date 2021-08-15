@@ -314,13 +314,14 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
         
         noise = mixing_noise(args.batch, args.latent, args.mixing, device)
 
+        # Method: Freeze Style and Vector
         if args.freezeStyle >= 0:            
             fake_img, latent = generator_source(noise, return_latents=True)
             fake_img, _ = generator(noise, inject_index=args.freezeStyle, put_latent = latent)
-        # layer swapping method
+        # Method: layer swapping method
         elif args.layerSwap > 0:
-            fake_img, save_swap_layer = generator_source(noise, swap=True, swap_layer_num=args.layerSwap)
-            fake_img, _ = generator(noise, swap=True, swap_layer_num=args.layerSwap, swap_layer_tensor=save_swap_layer)
+            fake_img, save_swap_layer = generator_source(noise, swap=True, swap_layer_num=args.layerSwap, randomize_noise=False,)
+            fake_img, _ = generator(noise, swap=True, swap_layer_num=args.layerSwap, swap_layer_tensor=save_swap_layer, randomize_noise=False,)
         else:
             fake_img, _ = generator(noise)
 
@@ -333,7 +334,7 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
         loss_dict["g"] = g_loss
 
 
-        # Structure Loss
+        # Method: Structure Loss
         if args.structure_loss >= 0:
             for layer in range(args.structure_loss):
                 _, latent_med_sor = generator_source(noise, swap=True, swap_layer_num=layer+1)
@@ -569,7 +570,7 @@ if __name__ == "__main__":
     # define gpu no.
     parser.add_argument(
         "--gpu",
-        default='cuda'
+        default='cuda:0'
     )
     # ours
     parser.add_argument(
