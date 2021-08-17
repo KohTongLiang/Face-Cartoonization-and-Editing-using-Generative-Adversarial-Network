@@ -20,7 +20,6 @@ def image2image():
 
     # basic configuration
     device = config['cuda']
-    print(f'Running on cuda:{torch.cuda.current_device()}')
     truncation = 0.7
 
     # grab list of target networks
@@ -31,11 +30,13 @@ def image2image():
     # FFHQ Source Generator
     network1 = config['source_domain']  #@param ['ffhq256', 'NaverWebtoon', 'NaverWebtoon_StructureLoss', 'NaverWebtoon_FreezeSG', 'Romance101', 'TrueBeauty', 'Disney', 'Disney_StructureLoss', 'Disney_FreezeSG', 'Metface_StructureLoss', 'Metface_FreezeSG']
     network1 = f'./networks/{network1}.pt' 
-    network1 = torch.load(network1)
+    network1 = torch.load(network1, map_location='cpu')
 
     g1 = Generator(256, 512, 8, channel_multiplier=2).to(device)
     g1.load_state_dict(network1["g_ema"], strict=False)
+    g1.to(device)
     trunc1 = g1.mean_latent(4096)
+    print(f'Running on cuda:{torch.cuda.current_device()}')
 
     # Create generator of each target networks
     for target in target_networks:
@@ -88,7 +89,7 @@ def image2image():
 
                 imgs_gen1, save_swap_layer = g1([latent_interp],
                                         input_is_latent=True,                                     
-                                        truncation=0.45,
+                                        truncation=0.7,
                                         return_latents=False,
                                         truncation_latent=trunc1,
                                         swap=swap, swap_layer_num=swap_layer_num,
@@ -98,7 +99,7 @@ def image2image():
                 for gen in target_generators:
                     imgs_gen, _ = gen['gen']([latent_interp],
                                         input_is_latent=True,                                     
-                                        truncation=0.45,
+                                        truncation=0.7,
                                         truncation_latent=gen['trunc'],
                                         randomize_noise=False,
                                         swap=swap, swap_layer_num=swap_layer_num, swap_layer_tensor=save_swap_layer,
@@ -124,7 +125,7 @@ def style_mixing():
     # load config file
     config = json.load(open('./config/config.json'))
 
-    device = 'cuda'
+    device = config['cuda']
     Target_network = "256Anime_332000" #@param ['ffhq256', 'NaverWebtoon', 'NaverWebtoon_StructureLoss', 'NaverWebtoon_FreezeSG', 'Romance101', 'TrueBeauty', 'Disney', 'Disney_StructureLoss', 'Disney_FreezeSG', 'Metface_StructureLoss', 'Metface_FreezeSG']
     swap = False #@param {type:"boolean"}
     save_swap_layer = 2 #@param {type:"slider", min:1, max:6, step:1}
@@ -198,11 +199,12 @@ def style_mixing():
         #                             )
 
         # Generator1
-        network1='./networks/256Anime_430000.pt' 
-        network1 = torch.load(network1)
+        network1='./networks/ffhq256.pt' 
+        network1 = torch.load(network1, map_location='cpu')
 
         generator1 = Generator(256, 512, 8, channel_multiplier=2).to(device)
         generator1.load_state_dict(network1["g"], strict=False)
+        generator1.to(device)
 
         for i in range(number_of_sample):
             # latent1
@@ -224,7 +226,7 @@ def style_mixing():
             # Latent !
             mixed_latent = torch.cat([latent1, latent2, latent3], dim = 0)
 
-            img_sample, latent = generator1([mixed_latent], input_is_latent=True, return_latents=True)
+            img_sample, latent = generator1([latent1], input_is_latent=True, return_latents=True)
             img_gens.append({ 'image' : img_sample, 'latent' : latent, 'trunc' : trunc1 })
             img.append(img_sample)
 
@@ -236,9 +238,8 @@ def style_mixing():
                 latent2 = style_to_change['latent']
                 
                 #mixed_latent = torch.tensor(latent2 , latent1)
-                
-
-                mixed, _ = generator1([latent1], truncation=0.7, truncation_latent=style_to_change['trunc'], input_is_latent=True)
+            
+                mixed, _ = generator1([latent2], inject_index=3, put_latent=latent1)
                 img.append(mixed)
             
                 i += 1
@@ -274,10 +275,11 @@ def sample_image():
 
         network = target
         network = f'./networks/{network}.pt'
-        network = torch.load(network)
+        network = torch.load(network, map_location='cpu')
 
         g = Generator(256, 512, 8, channel_multiplier=2).to(device)
         g.load_state_dict(network['g_ema'], strict=False)
+        g.to(device)
         trunc = g.mean_latent(4096)
         target_generators.append({ 'gen' : g, 'trunc' : trunc, 'gen_name' : target })
 
@@ -290,13 +292,6 @@ def sample_image():
     imgs = []
     number_of_img = config['number_of_img']
     number_of_step = config['number_of_step']
-    swap = config['swap']
-    swap_layer_num = config['swap_layer_num']
-    # number_of_img = 4 #@param {type:"slider", min:0, max:30, step:1}
-    # number_of_step = 6 #@param {type:"slider", min:0, max:10, step:1
-    # swap = True #@param {type:"boolean"}
-    # swap_layer_num = 2 #@param {type:"slider", min:1, max:6, step:1}
-
     print("Beginning Generations")
 
     with torch.no_grad():
