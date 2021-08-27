@@ -318,10 +318,11 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
         if args.freezeStyle >= 0:            
             fake_img, latent = generator_source(noise, return_latents=True)
             fake_img, _ = generator(noise, inject_index=args.freezeStyle, put_latent = latent)
-        # Method: layer swapping method
+        # Method: Layer Swapping method
         elif args.layerSwap > 0:
-            fake_img, save_swap_layer = generator_source(noise, swap=True, swap_layer_num=args.layerSwap, randomize_noise=False,)
-            fake_img, _ = generator(noise, swap=True, swap_layer_num=args.layerSwap, swap_layer_tensor=save_swap_layer, randomize_noise=False,)
+            swap_num = args.layerSwap
+            fake_img, save_swap_layer = generator_source(noise, swap=True, swap_layer_num=swap_num, randomize_noise=False,)
+            fake_img, _ = generator(noise, swap=True, swap_layer_num=swap_num, swap_layer_tensor=save_swap_layer, randomize_noise=False,)
         else:
             fake_img, _ = generator(noise)
 
@@ -333,15 +334,13 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
 
         loss_dict["g"] = g_loss
 
-
         # Method: Structure Loss
         if args.structure_loss >= 0:
             for layer in range(args.structure_loss):
                 _, latent_med_sor = generator_source(noise, swap=True, swap_layer_num=layer+1)
                 _, latent_med_tar = generator(noise, swap=True, swap_layer_num=layer+1)
-                # g_loss = g_loss + F.mse_loss(latent_med_tar, latent_med_sor) # for each layer calculate mse loss between source and target rgb ouputs
-                g_loss = g_loss + (10 * F.mse_loss(latent_med_tar, latent_med_sor)) # hyperparameter 2 higher importance of source domain
-
+                # set structure parameter in arguments source_impt. Default 1
+                g_loss = g_loss + (args.source_impt * F.mse_loss(latent_med_tar, latent_med_sor)) # for each layer calculate mse loss between source and target rgb ouputs
                 
         generator.zero_grad()
         g_loss.backward()
@@ -419,13 +418,13 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
                 with torch.no_grad():
                     g_ema.eval()
                     sample, _ = g_ema([sample_z])
-                    utils.save_image(
-                        sample,
-                        f"{save_dir}/{str(i).zfill(6)}.png",
-                        nrow=int(args.n_sample ** 0.5),
-                        normalize=True,
-                        range=(-1, 1),
-                    )
+                    # utils.save_image(
+                    #     sample,
+                    #     f"{save_dir}/{str(i).zfill(6)}.png",
+                    #     nrow=int(args.n_sample ** 0.5),
+                    #     normalize=True,
+                    #     range=(-1, 1),
+                    # )
 
             if i % 2000 == 0:
                 torch.save(
@@ -567,12 +566,12 @@ if __name__ == "__main__":
         help="freezeFC",
         default=False
     )
-    # define gpu no.
+    # choose which gpu to use
     parser.add_argument(
         "--gpu",
         default='cuda:0'
     )
-    # ours
+    # layer swapping method
     parser.add_argument(
         "--layerSwap",
         type=int,
@@ -582,6 +581,18 @@ if __name__ == "__main__":
     parser.add_argument(
         "--expr_dir",
         default='expr'
+    )
+    # huber loss
+    parser.add_argument(
+        '--structure_loss_huber',
+        type=int,
+        default=-1
+    )
+    # source relative importance
+    parser.add_argument(
+        '--source_impt',
+        type=int,
+        default=1
     )
 
     args = parser.parse_args()
@@ -598,12 +609,10 @@ if __name__ == "__main__":
 
     args.latent = 512
     args.n_mlp = 8
-
     args.start_iter = 0
 
     if args.arch == 'stylegan2':
         from model import Generator, Discriminator
-
     elif args.arch == 'swagan':
         from swagan import Generator, Discriminator
 

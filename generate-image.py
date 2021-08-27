@@ -12,11 +12,15 @@ from utils import imshow, tensor2image
 from model import Generator
 from random import randrange
 
+mode = ''
+config_name = ''
+
+
 def image2image():
     print("Loading Config")
 
     # load config file
-    config = json.load(open('./config/config.json'))
+    config = json.load(open(f'./config/{config_name}.json'))
 
     # basic configuration
     device = config['cuda']
@@ -89,7 +93,7 @@ def image2image():
 
                 imgs_gen1, save_swap_layer = g1([latent_interp],
                                         input_is_latent=True,                                     
-                                        truncation=0.7,
+                                        truncation=0.5,
                                         return_latents=False,
                                         truncation_latent=trunc1,
                                         swap=swap, swap_layer_num=swap_layer_num,
@@ -99,7 +103,7 @@ def image2image():
                 for gen in target_generators:
                     imgs_gen, _ = gen['gen']([latent_interp],
                                         input_is_latent=True,                                     
-                                        truncation=0.7,
+                                        truncation=0.5,
                                         truncation_latent=gen['trunc'],
                                         randomize_noise=True,
                                         swap=swap, swap_layer_num=swap_layer_num, swap_layer_tensor=save_swap_layer,
@@ -163,7 +167,7 @@ def style_mixing():
     # outdir = 'results_030821' #@param {type:"string"}
     outdir = config['outdir']
     if not os.path.isdir(f'{outdir}'):
-        os.makedirs(f'./asset/{outdir}', exist_ok=True)
+        os.makedirs(f'./asset/{outdir}-style-mixing', exist_ok=True)
 
     imgs = []
     number_of_img = config['number_of_img']
@@ -296,10 +300,11 @@ def sample_image():
 
 if __name__ == "__main__":
     mode = sys.argv[1]
+    config_name = sys.argv[2]
 
-    if mode == '-i2i':
+    if mode == 'i2i':
         image2image()
-    elif mode == '-sample_image':
+    elif mode == 'sample_image':
         sample_image()
-    elif mode == '-style_mixing':
+    elif mode == 'style_mixing':
         style_mixing()

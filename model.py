@@ -625,9 +625,6 @@ class Generator(nn.Module):
 
             skip = to_rgb(out, latent[:, i + 2], skip)
 
-            # debugging
-            # save_image(skip, f'./asset/layers/{generator_name}-layer-{i}.png') 
-
             i += 2
 
         image = skip

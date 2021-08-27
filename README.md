@@ -23,9 +23,10 @@ e.g) ["NaverWebtoon_StructureLoss", "Danbooru_Structure_Loss4", "Custom_NaverWeb
 
 ## Running the program
 
-### Image generation
+### Image generation (example)
 1) setup config file
-2) run: python generate-image.py
+2) run: python generate-image.py mode config_file_name # mode can be i2i, sample_image, style_mixing
+
 
 ## Training
 
