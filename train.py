@@ -222,6 +222,11 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
         if args.freezeStyle >= 0:            
             _, latent = generator_source(noise, return_latents=True)
             fake_img, _ = generator(noise, inject_index=args.freezeStyle, put_latent = latent)
+        # Method: Layer Swapping method
+        elif args.layerSwap > 0:
+            swap_num = args.layerSwap
+            fake_img, save_swap_layer = generator_source(noise, swap=True, swap_layer_num=swap_num, randomize_noise=False,)
+            fake_img, _ = generator(noise, swap=True, swap_layer_num=swap_num, swap_layer_tensor=save_swap_layer, randomize_noise=False,)
         elif args.freezeFC:      
             _, latent = generator_source(noise, return_latents=True)
             fake_img, _ = generator(noise, freezeFC = latent)
