@@ -40,7 +40,6 @@ def image2image():
     g1.load_state_dict(network1["g_ema"], strict=False)
     g1.to(device)
     trunc1 = g1.mean_latent(4096)
-    print(f'Running on cuda:{torch.cuda.current_device()}')
 
     # Create generator of each target networks
     for target in target_networks:
@@ -127,7 +126,7 @@ def style_mixing():
     print("Loading Config")
 
     # load config file
-    config = json.load(open('./config/config.json'))
+    config = json.load(open(f'./config/{config_name}.json'))
 
     # basic configuration
     device = config['cuda']
@@ -235,7 +234,7 @@ def sample_image():
     print("Loading Config")
 
     # load config file
-    config = json.load(open('./config/config.json'))
+    config = json.load(open(f'./config/{config_name}.json'))
 
     # basic configuration
     device = config['cuda']

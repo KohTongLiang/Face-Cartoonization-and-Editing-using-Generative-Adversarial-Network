@@ -11,6 +11,7 @@ from torch.utils import data
 import torch.distributed as dist
 from torchvision import transforms, utils
 from tqdm import tqdm
+from torch.utils.tensorboard import SummaryWriter
 
 try:
     import wandb
@@ -127,6 +128,7 @@ def set_grad_none(model, targets):
 
 
 def train(args, loader, generator, generator_source, discriminator, g_optim, d_optim, g_ema, device):
+    writer = SummaryWriter()
     # create directories
     save_dir = args.expr_dir
     os.makedirs(save_dir, 0o777, exist_ok=True)
@@ -403,6 +405,9 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
 
             #nsml.report(summary=True, step=i, G_loss=g_loss_val, D_loss=d_loss_val, R1_loss=r1_val, Path_loss=path_loss_val, mean_path=mean_path_length_avg, augment=ada_aug_p)
 
+            writer.add_scalar('G_Loss/Epoch', g_loss_val, i)
+            writer.add_scalar('D_Loss/Epoch', d_loss_val, i)
+
             if wandb and args.wandb:
                 wandb.log(
                     {
@@ -444,6 +449,9 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
                     },
                     f"{save_dir}/checkpoints/{str(i).zfill(6)}.pt",
                 )
+
+    writer.flush()
+    writer.close()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="StyleGAN2 trainer")
@@ -493,7 +501,10 @@ if __name__ == "__main__":
         help="interval of the applying path length regularization",
     )
     parser.add_argument(
-        "--mixing", type=float, default=0.9, help="probability of latent code mixing"
+        "--mixing",
+        type=float,
+        default=0.9,
+        help="probability of latent code mixing"
     )
     parser.add_argument(
         "--ckpt",
@@ -501,7 +512,11 @@ if __name__ == "__main__":
         default=None,
         help="path to the checkpoints to resume training",
     )
-    parser.add_argument("--lr", type=float, default=0.002, help="learning rate")
+    parser.add_argument(
+        "--lr",
+        type=float,
+        default=0.002,
+        help="learning rate")
     parser.add_argument(
         "--channel_multiplier",
         type=int,
@@ -509,13 +524,20 @@ if __name__ == "__main__":
         help="channel multiplier factor for the model. config-f = 2, else = 1",
     )
     parser.add_argument(
-        "--wandb", action="store_true", help="use weights and biases logging"
+        "--wandb",
+        action="store_true",
+        help="use weights and biases logging"
     )
     parser.add_argument(
-        "--local_rank", type=int, default=0, help="local rank for distributed training"
+        "--local_rank",
+        type=int,
+        default=0,
+        help="local rank for distributed training"
     )
     parser.add_argument(
-        "--augment", action="store_true", help="apply non leaking augmentation"
+        "--augment",
+        action="store_true",
+        help="apply non leaking augmentation"
     )
     parser.add_argument(
         "--augment_p",
@@ -564,7 +586,7 @@ if __name__ == "__main__":
         type=int, 
         help="freezeStyle",
         default=-1
-    )        
+    )
     parser.add_argument(
         "--freezeFC", 
         action="store_true",
@@ -652,6 +674,7 @@ if __name__ == "__main__":
         lr=args.lr * g_reg_ratio,
         betas=(0 ** g_reg_ratio, 0.99 ** g_reg_ratio),
     )
+    
     d_optim = optim.Adam(
         discriminator.parameters(),
         lr=args.lr * d_reg_ratio,

@@ -463,6 +463,7 @@ class Generator(nn.Module):
         )
         self.to_rgb1 = ToRGB(self.channels[4], style_dim, upsample=False)
 
+        # log2(256)
         self.log_size = int(math.log(size, 2))
         self.num_layers = (self.log_size - 2) * 2 + 1
 
@@ -473,14 +474,17 @@ class Generator(nn.Module):
 
         in_channel = self.channels[4]
 
+        # noise to be intoduced after each layer
         for layer_idx in range(self.num_layers):
             res = (layer_idx + 5) // 2
             shape = [1, 1, 2 ** res, 2 ** res]
             self.noises.register_buffer(f"noise_{layer_idx}", torch.randn(*shape))
 
+        # Create all the conv layers
         for i in range(3, self.log_size + 1):
             out_channel = self.channels[2 ** i]
 
+            # Upsample before conv 3x3
             self.convs.append(
                 StyledConv(
                     in_channel,
@@ -492,6 +496,7 @@ class Generator(nn.Module):
                 )
             )
 
+            # conv 3x3
             self.convs.append(
                 StyledConv(
                     out_channel, out_channel, 3, style_dim, blur_kernel=blur_kernel
@@ -500,6 +505,7 @@ class Generator(nn.Module):
 
             self.to_rgbs.append(ToRGB(out_channel, style_dim))
 
+            # Go to next conv layers
             in_channel = out_channel
 
         self.n_latent = self.log_size * 2 - 2
@@ -578,25 +584,23 @@ class Generator(nn.Module):
 
             if styles[0].ndim < 3:
                 latent = styles[0].unsqueeze(1).repeat(1, inject_index, 1)
-
             else:
                 latent = styles[0]
 
         else:
+            # style mixing: mix 2 latent input to 1
+
             if inject_index is None:
                 inject_index = random.randint(1, self.n_latent - 1)
-
 
             if put_latent is not None:
                 # freezeStyle
                 latent1 = put_latent[:,:inject_index]
                 latent2 = styles[0].unsqueeze(1).repeat(1, self.n_latent - inject_index, 1)
                 latent = torch.cat([latent1, latent2], 1)
-            
             elif freezeFC is not None:
                 # freezeFC
                 latent = freezeFC
-
             else:
                 latent1 = styles[0].unsqueeze(1).repeat(1, inject_index, 1)
                 latent2 = styles[1].unsqueeze(1).repeat(1, self.n_latent - inject_index, 1)
@@ -609,20 +613,31 @@ class Generator(nn.Module):
 
         i = 1
 
+        # save_swap_layer = []
+
+        # zip for parallel iteration (iterate the convs, noise, rgb at the same time)
         for conv1, conv2, noise1, noise2, to_rgb in zip(
             self.convs[::2], self.convs[1::2], noise[1::2], noise[2::2], self.to_rgbs
         ):
 
-            out = conv1(out, latent[:, i], noise=noise1)
+            out = conv1(out, latent[:, i], noise=noise1) # not sure why this was here
+            # convolution output, latent input, noise
+            # latent[:, i + 1] is basically the style for this conv layer
             out = conv2(out, latent[:, i + 1], noise=noise2)
 
-            # swap layer
-            if swap==True and i==(2*swap_layer_num-1):
-                save_swap_layer = out
+            # for layer swapping
+            if swap==True and i == (2 * swap_layer_num - 1):
                 if swap_layer_tensor is not None:
                     out = swap_layer_tensor
+                    # if len(swap_layer_tensor) > 0:
+                    #     out = swap_layer_tensor.pop(0)
+                # else:
+                    # save_swap_layer.append(out)
+                
+                save_swap_layer = out
            
-
+            
+            # for colour
             skip = to_rgb(out, latent[:, i + 2], skip)
 
             i += 2
@@ -704,7 +719,7 @@ class ResBlock(nn.Module):
 
 
 class Discriminator(nn.Module):
-    def __init__(self, size, channel_multiplier=2, blur_kernel=[1, 3, 3, 1]):
+    def __init__(self, size, channel_multiplier=1, blur_kernel=[1, 3, 3, 1]):
         super().__init__()
 
         channels = {
