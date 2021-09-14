@@ -30,25 +30,16 @@ e.g) ["NaverWebtoon_StructureLoss", "Danbooru_Structure_Loss4", "Custom_NaverWeb
 
 ## Training
 
-### Layer Swapping
-ex) python train.py --batch=8 --ckpt=ffhq256.pt --layerSwap=2 --freezeD=3 --augment --path=LMDB_PATH
-
 ### StyleGAN2
 python train.py --batch BATCH_SIZE LMDB_PATH
 
-ex) python train.py --batch=8 --ckpt=ffhq256.pt --freezeG=4 --freezeD=3 --augment --path=LMDB_PATH
+ex) python train.py --batch=8 --ckpt=ffhq256.pt --freezeG=4 --freezeD=3 --augment --path=LMDB_PATH --expr_dir=Experiment_Directory --gpu=CUDA:0
 
 ### StructureLoss
-ex) python train.py --batch=8 --ckpt=ffhq256.pt --structure_loss=2 --freezeD=3 --augment --path=LMDB_PATH
+ex) python train.py --batch=8 --ckpt=ffhq256.pt --structure_loss=2 --freezeD=3 --augment --path=LMDB_PATH --expr_dir=Experiment_Directory --gpu=CUDA:0
 
 ### FreezeSG
-ex) python train.py --batch=8 --ckpt=ffhq256.pt --freezeStyle=2 --freezeG=4 --freezeD=3 --augment --path=LMDB_PATH
-
-
-### Distributed Settings
-python train.py --batch BATCH_SIZE --path LMDB_PATH \
-    -m torch.distributed.launch --nproc_per_node=N_GPU --main_port=PORT
-
+ex) python train.py --batch=8 --ckpt=ffhq256.pt --freezeStyle=2 --freezeG=4 --freezeD=3 --augment --path=LMDB_PATH --expr_dir=Experiment_Directory --gpu=CUDA:0
 
 ## Reference
 
