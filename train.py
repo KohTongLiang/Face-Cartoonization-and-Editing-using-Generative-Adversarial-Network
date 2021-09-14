@@ -128,11 +128,13 @@ def set_grad_none(model, targets):
 
 
 def train(args, loader, generator, generator_source, discriminator, g_optim, d_optim, g_ema, device):
-    writer = SummaryWriter()
     # create directories
     save_dir = args.expr_dir
     os.makedirs(save_dir, 0o777, exist_ok=True)
     os.makedirs(save_dir + "/checkpoints", 0o777, exist_ok=True)
+
+    # create tensorboard log file in experiment directory
+    writer = SummaryWriter(save_dir)
 
     loader = sample_data(loader)
 
@@ -403,10 +405,14 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
                 )
             )
 
-            #nsml.report(summary=True, step=i, G_loss=g_loss_val, D_loss=d_loss_val, R1_loss=r1_val, Path_loss=path_loss_val, mean_path=mean_path_length_avg, augment=ada_aug_p)
+            #R1_loss=r1_val, Path_loss=path_loss_val, mean_path=mean_path_length_avg, augment=ada_aug_p)
 
             writer.add_scalar('G_Loss/Epoch', g_loss_val, i)
             writer.add_scalar('D_Loss/Epoch', d_loss_val, i)
+            writer.add_scalar('R1_Loss/Epoch', r1_val, i)
+            writer.add_scalar('Path_Loss/Epoch', path_loss_val, i)
+            writer.add_scalar('Mean_Path', mean_path_length_avg, i)
+            writer.add_scalar('Augment', ada_aug_p, i)
 
             if wandb and args.wandb:
                 wandb.log(
@@ -424,10 +430,11 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
                     }
                 )
 
-            if i % 100 == 0:
-                with torch.no_grad():
-                    g_ema.eval()
-                    sample, _ = g_ema([sample_z])
+            # Sampling images
+            # if i % 100 == 0:
+            #     with torch.no_grad():
+            #         g_ema.eval()
+            #         sample, _ = g_ema([sample_z])
                     # utils.save_image(
                     #     sample,
                     #     f"{save_dir}/{str(i).zfill(6)}.png",
@@ -609,17 +616,17 @@ if __name__ == "__main__":
         "--expr_dir",
         default='expr'
     )
-    # huber loss
-    parser.add_argument(
-        '--structure_loss_huber',
-        type=int,
-        default=-1
-    )
     # source relative importance
     parser.add_argument(
         '--source_impt',
         type=int,
         default=1
+    )
+    # weight decay for AdamsW
+    parser.add_argument(
+        '--adam_weight_decay',
+        type=float,
+        default=0.1
     )
 
     args = parser.parse_args()
@@ -669,18 +676,19 @@ if __name__ == "__main__":
     g_reg_ratio = args.g_reg_every / (args.g_reg_every + 1)
     d_reg_ratio = args.d_reg_every / (args.d_reg_every + 1)
 
-    g_optim = optim.Adam(
+    g_optim = optim.AdamW(
         generator.parameters(),
         lr=args.lr * g_reg_ratio,
         betas=(0 ** g_reg_ratio, 0.99 ** g_reg_ratio),
+        weight_decay = args.adam_weight_decay,
     )
     
-    d_optim = optim.Adam(
+    d_optim = optim.AdamW(
         discriminator.parameters(),
         lr=args.lr * d_reg_ratio,
         betas=(0 ** d_reg_ratio, 0.99 ** d_reg_ratio),
+        weight_decay = args.adam_weight_decay,
     )
-
 
     #----------------------------
     # Transfer Learning

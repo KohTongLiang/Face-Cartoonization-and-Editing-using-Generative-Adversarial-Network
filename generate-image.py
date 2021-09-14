@@ -33,7 +33,7 @@ def image2image():
 
     # FFHQ Source Generator
     network1 = config['source_domain']  #@param ['ffhq256', 'NaverWebtoon', 'NaverWebtoon_StructureLoss', 'NaverWebtoon_FreezeSG', 'Romance101', 'TrueBeauty', 'Disney', 'Disney_StructureLoss', 'Disney_FreezeSG', 'Metface_StructureLoss', 'Metface_FreezeSG']
-    network1 = f'./networks/{network1}.pt' 
+    network1 = f'./{network1}.pt' 
     network1 = torch.load(network1, map_location='cpu')
 
     g1 = Generator(256, 512, 8, channel_multiplier=2).to(device)
@@ -46,7 +46,7 @@ def image2image():
         print(f'Creating generator for {target}')
 
         network = target
-        network = f'./networks/{network}.pt'
+        network = f'./{network}.pt'
         network = torch.load(network, map_location='cpu')
 
         g = Generator(256, 512, 8, channel_multiplier=2).to(device)
@@ -92,17 +92,18 @@ def image2image():
 
                 imgs_gen1, save_swap_layer = g1([latent_interp],
                                         input_is_latent=True,                                     
-                                        truncation=0.5,
+                                        truncation=config['truncation'],
                                         return_latents=False,
                                         truncation_latent=trunc1,
                                         swap=swap, swap_layer_num=swap_layer_num,
                                         randomize_noise=True,
                                         generator_name=f'ffhq-img-{i}-step-{j}')
                 img_gens.append(imgs_gen1)
+
                 for gen in target_generators:
                     imgs_gen, _ = gen['gen']([latent_interp],
                                         input_is_latent=True,                                     
-                                        truncation=0.5,
+                                        truncation=config['truncation'],
                                         truncation_latent=gen['trunc'],
                                         randomize_noise=True,
                                         swap=swap, swap_layer_num=swap_layer_num, swap_layer_tensor=save_swap_layer,

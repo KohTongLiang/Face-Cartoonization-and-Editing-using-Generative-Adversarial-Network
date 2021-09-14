@@ -2,15 +2,13 @@ import math
 import random
 import functools
 import operator
-
 import torch
+
 from torch import nn
 from torch.nn import functional as F
 from torch.autograd import Function
-
 from op import FusedLeakyReLU, fused_leaky_relu, upfirdn2d, conv2d_gradfix
 from torchvision.utils import save_image
-
 
 class PixelNorm(nn.Module):
     def __init__(self):
@@ -18,7 +16,6 @@ class PixelNorm(nn.Module):
 
     def forward(self, input):
         return input * torch.rsqrt(torch.mean(input ** 2, dim=1, keepdim=True) + 1e-8)
-
 
 def make_kernel(k):
     k = torch.tensor(k, dtype=torch.float32)
@@ -29,7 +26,6 @@ def make_kernel(k):
     k /= k.sum()
 
     return k
-
 
 class Upsample(nn.Module):
     def __init__(self, kernel, factor=2):
@@ -51,7 +47,6 @@ class Upsample(nn.Module):
 
         return out
 
-
 class Downsample(nn.Module):
     def __init__(self, kernel, factor=2):
         super().__init__()
@@ -72,7 +67,6 @@ class Downsample(nn.Module):
 
         return out
 
-
 class Blur(nn.Module):
     def __init__(self, kernel, pad, upsample_factor=1):
         super().__init__()
@@ -90,7 +84,6 @@ class Blur(nn.Module):
         out = upfirdn2d(input, self.kernel, pad=self.pad)
 
         return out
-
 
 class EqualConv2d(nn.Module):
     def __init__(
@@ -128,7 +121,6 @@ class EqualConv2d(nn.Module):
             f"{self.__class__.__name__}({self.weight.shape[1]}, {self.weight.shape[0]},"
             f" {self.weight.shape[2]}, stride={self.stride}, padding={self.padding})"
         )
-
 
 class EqualLinear(nn.Module):
     def __init__(
@@ -182,8 +174,6 @@ class EqualLinear(nn.Module):
 
 #         return out * math.sqrt(2)
 
-
-## 조금 다름
 class ModulatedConv2d(nn.Module):
     def __init__(
         self,
@@ -319,7 +309,6 @@ class ModulatedConv2d(nn.Module):
 
         return out
 
-
 class NoiseInjection(nn.Module):
     def __init__(self):
         super().__init__()
@@ -333,7 +322,6 @@ class NoiseInjection(nn.Module):
 
         return image + self.weight * noise
 
-
 class ConstantInput(nn.Module):
     def __init__(self, channel, size=4):
         super().__init__()
@@ -345,7 +333,6 @@ class ConstantInput(nn.Module):
         out = self.input.repeat(batch, 1, 1, 1)
 
         return out
-
 
 class StyledConv(nn.Module):
     def __init__(
@@ -380,9 +367,7 @@ class StyledConv(nn.Module):
         out = self.noise(out, noise=noise)
         # out = out + self.bias
         out = self.activate(out)
-
         return out
-
 
 class ToRGB(nn.Module):
     def __init__(self, in_channel, style_dim, upsample=True, blur_kernel=[1, 3, 3, 1]):
@@ -400,11 +385,9 @@ class ToRGB(nn.Module):
 
         if skip is not None:
             skip = self.upsample(skip)
-
             out = out + skip
 
         return out
-
 
 class Generator(nn.Module):
     def __init__(
@@ -417,9 +400,7 @@ class Generator(nn.Module):
         lr_mlp=0.01,
     ):
         super().__init__()
-
         self.size = size
-
         self.style_dim = style_dim  # dimension of latent z
 
         # -------------------
@@ -719,7 +700,7 @@ class ResBlock(nn.Module):
 
 
 class Discriminator(nn.Module):
-    def __init__(self, size, channel_multiplier=1, blur_kernel=[1, 3, 3, 1]):
+    def __init__(self, size, channel_multiplier=2, blur_kernel=[1, 3, 3, 1]):
         super().__init__()
 
         channels = {
