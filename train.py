@@ -189,7 +189,7 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
         # Freeze !!!
         if args.freezeG > 0 and args.freezeD > 0:
             # G
-            for layer in range(args.freezeG):
+            for layer in range(args.freezeG, generator.num_layers):
                 requires_grad(generator, False, target_layer=f'convs.{generator.num_layers-2-2*layer}')
                 requires_grad(generator, False, target_layer=f'convs.{generator.num_layers-3-2*layer}')
                 requires_grad(generator, False, target_layer=f'to_rgbs.{generator.log_size-3-layer}')
@@ -199,7 +199,7 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
             requires_grad(discriminator, True, target_layer=f'final_') #final_conv, final_linear
         elif args.freezeG > 0 :
             # G
-            for layer in range(args.freezeG):
+            for layer in range(args.freezeG, generator.num_layers):
                 requires_grad(generator, False, target_layer=f'convs.{generator.num_layers-2-2*layer}')
                 requires_grad(generator, False, target_layer=f'convs.{generator.num_layers-3-2*layer}')
                 requires_grad(generator, False, target_layer=f'to_rgbs.{generator.log_size-3-layer}')
@@ -288,7 +288,7 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
         # Freeze !!!
         if args.freezeG > 0 and args.freezeD > 0:
             # G
-            for layer in range(args.freezeG):
+            for layer in range(args.freezeG, generator.num_layers):
                 requires_grad(generator, True, target_layer=f'convs.{generator.num_layers-2-2*layer}')
                 requires_grad(generator, True, target_layer=f'convs.{generator.num_layers-3-2*layer}')
                 requires_grad(generator, True, target_layer=f'to_rgbs.{generator.log_size-3-layer}')
@@ -296,16 +296,14 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
             for layer in range(args.freezeD):
                 requires_grad(discriminator, False, target_layer=f'convs.{discriminator.log_size-2-layer}')
             requires_grad(discriminator, False, target_layer=f'final_') #final_conv, final_linear
-
         elif args.freezeG > 0 :
             # G
-            for layer in range(args.freezeG):
+            for layer in range(args.freezeG, generator.num_layers):
                 requires_grad(generator, True, target_layer=f'convs.{generator.num_layers-2-2*layer}')
                 requires_grad(generator, True, target_layer=f'convs.{generator.num_layers-3-2*layer}')
                 requires_grad(generator, True, target_layer=f'to_rgbs.{generator.log_size-3-layer}')
             # D
             requires_grad(discriminator, False)
-
         elif args.freezeD > 0 :
             # G
             requires_grad(generator, True)
@@ -405,8 +403,7 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
                 )
             )
 
-            #R1_loss=r1_val, Path_loss=path_loss_val, mean_path=mean_path_length_avg, augment=ada_aug_p)
-
+            # R1_loss=r1_val, Path_loss=path_loss_val, mean_path=mean_path_length_avg, augment=ada_aug_p)
             writer.add_scalar('G_Loss/Epoch', g_loss_val, i)
             writer.add_scalar('D_Loss/Epoch', d_loss_val, i)
             writer.add_scalar('R1_Loss/Epoch', r1_val, i)
@@ -603,7 +600,7 @@ if __name__ == "__main__":
     # choose which gpu to use
     parser.add_argument(
         "--gpu",
-        default='cuda:0'
+        default='cuda'
     )
     # layer swapping method
     parser.add_argument(
@@ -647,10 +644,6 @@ if __name__ == "__main__":
 
     if args.arch == 'stylegan2':
         from model import Generator, Discriminator
-    elif args.arch == 'swagan':
-        from swagan import Generator, Discriminator
-
-
 
     #----------------------------
     # Make Model
@@ -667,9 +660,11 @@ if __name__ == "__main__":
     discriminator = Discriminator(
         args.size, channel_multiplier=args.channel_multiplier
     ).to(device)
+
     g_ema = Generator(
         args.size, args.latent, args.n_mlp, channel_multiplier=args.channel_multiplier
     ).to(device)
+    
     g_ema.eval()
     accumulate(g_ema, generator, 0)
 
@@ -702,7 +697,6 @@ if __name__ == "__main__":
         try:
             ckpt_name = os.path.basename(args.ckpt)
             args.start_iter = int(os.path.splitext(ckpt_name)[0])
-
         except ValueError:
             pass
 

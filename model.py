@@ -122,22 +122,19 @@ class EqualConv2d(nn.Module):
             f" {self.weight.shape[2]}, stride={self.stride}, padding={self.padding})"
         )
 
+# Weight modulation network
 class EqualLinear(nn.Module):
     def __init__(
         self, in_dim, out_dim, bias=True, bias_init=0, lr_mul=1, activation=None
     ):
         super().__init__()
-
         self.weight = nn.Parameter(torch.randn(out_dim, in_dim).div_(lr_mul))
-
         if bias:
             self.bias = nn.Parameter(torch.zeros(out_dim).fill_(bias_init))
-
         else:
             self.bias = None
 
         self.activation = activation
-
         self.scale = (1 / math.sqrt(in_dim)) * lr_mul
         self.lr_mul = lr_mul
 
@@ -145,7 +142,6 @@ class EqualLinear(nn.Module):
         if self.activation:
             out = F.linear(input, self.weight * self.scale)
             out = fused_leaky_relu(out, self.bias * self.lr_mul)
-
         else:
             out = F.linear(
                 input, self.weight * self.scale, bias=self.bias * self.lr_mul
@@ -158,22 +154,7 @@ class EqualLinear(nn.Module):
             f"{self.__class__.__name__}({self.weight.shape[1]}, {self.weight.shape[0]})"
         )
 
-
-# --------------------------------------
-# style clip
-# --------------------------------------
-
-# class ScaledLeakyReLU(nn.Module):
-#     def __init__(self, negative_slope=0.2):
-#         super().__init__()
-
-#         self.negative_slope = negative_slope
-
-#     def forward(self, input):
-#         out = F.leaky_relu(input, negative_slope=self.negative_slope)
-
-#         return out * math.sqrt(2)
-
+# conv layer within each resolution layers
 class ModulatedConv2d(nn.Module):
     def __init__(
         self,
@@ -216,21 +197,24 @@ class ModulatedConv2d(nn.Module):
         self.scale = 1 / math.sqrt(fan_in)
         self.padding = kernel_size // 2
 
+        # weight of the conv layer
         self.weight = nn.Parameter(
             torch.randn(1, out_channel, in_channel, kernel_size, kernel_size)
         )
 
+        # weight demodulation process before latent code enter conv3x3 from A
         self.modulation = EqualLinear(style_dim, in_channel, bias_init=1)
-
         self.demodulate = demodulate
         self.fused = fused
 
+    # special Python method to represent a class's object as string
     def __repr__(self):
         return (
             f"{self.__class__.__name__}({self.in_channel}, {self.out_channel}, {self.kernel_size}, "
             f"upsample={self.upsample}, downsample={self.downsample})"
         )
 
+    # forward pass in ModConv2D
     def forward(self, input, style):
         batch, in_channel, height, width = input.shape
 
@@ -238,7 +222,9 @@ class ModulatedConv2d(nn.Module):
             weight = self.scale * self.weight.squeeze(0)
             style = self.modulation(style)
 
+            # replaces instance normalization found in StyleGAN V1
             if self.demodulate:
+                # reshape weight and style, multiply them together
                 w = weight.unsqueeze(0) * style.view(batch, 1, in_channel, 1, 1)
                 dcoefs = (w.square().sum((2, 3, 4)) + 1e-8).rsqrt()
 
@@ -250,11 +236,9 @@ class ModulatedConv2d(nn.Module):
                     input, weight, padding=0, stride=2
                 )
                 out = self.blur(out)
-
             elif self.downsample:
                 input = self.blur(input)
                 out = conv2d_gradfix.conv2d(input, weight, padding=0, stride=2)
-
             else:
                 out = conv2d_gradfix.conv2d(input, weight, padding=self.padding)
 
@@ -288,7 +272,6 @@ class ModulatedConv2d(nn.Module):
             _, _, height, width = out.shape
             out = out.view(batch, self.out_channel, height, width)
             out = self.blur(out)
-
         elif self.downsample:
             input = self.blur(input)
             _, _, height, width = input.shape
@@ -298,7 +281,6 @@ class ModulatedConv2d(nn.Module):
             )
             _, _, height, width = out.shape
             out = out.view(batch, self.out_channel, height, width)
-
         else:
             input = input.view(1, batch * in_channel, height, width)
             out = conv2d_gradfix.conv2d(
@@ -334,6 +316,7 @@ class ConstantInput(nn.Module):
 
         return out
 
+# Inject style and noise into the conv layer
 class StyledConv(nn.Module):
     def __init__(
         self,
@@ -550,6 +533,9 @@ class Generator(nn.Module):
                     getattr(self.noises, f"noise_{i}") for i in range(self.num_layers)
                 ]
 
+        # Truncation trick: latent sampling procedure
+        # Given sample, if it falls our of range, resample it into range
+        # improves Inception Score and Fid
         if truncation < 1:
             style_t = []
 
@@ -559,7 +545,7 @@ class Generator(nn.Module):
                 )
             styles = style_t
 
-
+        # if single style
         if len(styles) < 2:
             inject_index = self.n_latent
 
@@ -568,8 +554,7 @@ class Generator(nn.Module):
             else:
                 latent = styles[0]
 
-        else:
-            # style mixing: mix 2 latent input to 1
+        else: # style mixing: mix 2 latent input to 1
 
             if inject_index is None:
                 inject_index = random.randint(1, self.n_latent - 1)
@@ -586,10 +571,13 @@ class Generator(nn.Module):
                 latent1 = styles[0].unsqueeze(1).repeat(1, inject_index, 1)
                 latent2 = styles[1].unsqueeze(1).repeat(1, self.n_latent - inject_index, 1)
                 latent = torch.cat([latent1, latent2], 1)
-            
+        
+        # instantiate generator output as the latent vector first
         out = self.input(latent)
-        out = self.conv1(out, latent[:, 0], noise=noise[0])
 
+        # introduce into first conv layer
+        out = self.conv1(out, latent[:, 0], noise=noise[0])
+        # pass through 
         skip = self.to_rgb1(out, latent[:, 1])
 
         i = 1
@@ -600,8 +588,8 @@ class Generator(nn.Module):
         for conv1, conv2, noise1, noise2, to_rgb in zip(
             self.convs[::2], self.convs[1::2], noise[1::2], noise[2::2], self.to_rgbs
         ):
-
-            out = conv1(out, latent[:, i], noise=noise1) # not sure why this was here
+            # first conv, in 4x4 will be a Constant 4x4x512, conv 3x3 for subsequent
+            out = conv1(out, latent[:, i], noise=noise1)
             # convolution output, latent input, noise
             # latent[:, i + 1] is basically the style for this conv layer
             out = conv2(out, latent[:, i + 1], noise=noise2)
@@ -619,8 +607,10 @@ class Generator(nn.Module):
            
             
             # for colour
+            # 2nd style (the 2nd A) injected
             skip = to_rgb(out, latent[:, i + 2], skip)
 
+            # go to next resolution layer
             i += 2
 
         image = skip
@@ -632,6 +622,9 @@ class Generator(nn.Module):
         else:
             return image, None
 
+# ==============================================
+# Discriminator
+# ==============================================
 
 class ConvLayer(nn.Sequential):
     def __init__(
@@ -651,12 +644,9 @@ class ConvLayer(nn.Sequential):
             p = (len(blur_kernel) - factor) + (kernel_size - 1)
             pad0 = (p + 1) // 2
             pad1 = p // 2
-
             layers.append(Blur(blur_kernel, pad=(pad0, pad1)))
-
             stride = 2
             self.padding = 0
-
         else:
             stride = 1
             self.padding = kernel_size // 2
@@ -677,14 +667,11 @@ class ConvLayer(nn.Sequential):
 
         super().__init__(*layers)
 
-
 class ResBlock(nn.Module):
     def __init__(self, in_channel, out_channel, blur_kernel=[1, 3, 3, 1]):
         super().__init__()
-
         self.conv1 = ConvLayer(in_channel, in_channel, 3)
         self.conv2 = ConvLayer(in_channel, out_channel, 3, downsample=True)
-
         self.skip = ConvLayer(
             in_channel, out_channel, 1, downsample=True, activate=False, bias=False
         )
@@ -751,9 +738,7 @@ class Discriminator(nn.Module):
         stddev = stddev.mean([2, 3, 4], keepdims=True).squeeze(2)
         stddev = stddev.repeat(group, 1, height, width)
         out = torch.cat([out, stddev], 1)
-
         out = self.final_conv(out)
-
         out = out.view(batch, -1)
         out = self.final_linear(out)
 
