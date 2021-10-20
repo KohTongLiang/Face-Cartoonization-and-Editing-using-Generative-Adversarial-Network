@@ -21,10 +21,10 @@ Modify config file in /config/config.json
 e.g) ["NaverWebtoon_StructureLoss", "Danbooru_Structure_Loss4", "Custom_NaverWebtoon"]
 
 ## Preparing Dataset
-# for images in folder
+### for images in folder
 python prepare_data.py --out LMDB_PATH --n_worker N_WORKER --size SIZE1,SIZE2,SIZE3,... DATASET_PATH
 
-# for zip file
+### for zip file
 python run.py --prepare_data=DATASET_PATH --zip=ZIP_NAME --size SIZE
 
 ## Running the program
