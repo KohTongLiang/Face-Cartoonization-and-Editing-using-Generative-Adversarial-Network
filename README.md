@@ -20,6 +20,12 @@ Modify config file in /config/config.json
 - networks: target networks to use for image generation
 e.g) ["NaverWebtoon_StructureLoss", "Danbooru_Structure_Loss4", "Custom_NaverWebtoon"]
 
+## Preparing Dataset
+# for images in folder
+python prepare_data.py --out LMDB_PATH --n_worker N_WORKER --size SIZE1,SIZE2,SIZE3,... DATASET_PATH
+
+# for zip file
+python run.py --prepare_data=DATASET_PATH --zip=ZIP_NAME --size SIZE
 
 ## Running the program
 
@@ -40,6 +46,10 @@ ex) python train.py --batch=8 --ckpt=ffhq256.pt --structure_loss=2 --freezeD=3 -
 
 ### FreezeSG
 ex) python train.py --batch=8 --ckpt=ffhq256.pt --freezeStyle=2 --freezeG=4 --freezeD=3 --augment --path=LMDB_PATH --expr_dir=Experiment_Directory --gpu=CUDA:0
+
+## Evaluation
+
+FID: python -m pytorch_fid ./datasetA ./datasetB
 
 ## Reference
 
