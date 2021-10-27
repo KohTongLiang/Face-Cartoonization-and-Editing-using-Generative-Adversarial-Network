@@ -39,13 +39,13 @@ python run.py --prepare_data=DATASET_PATH --zip=ZIP_NAME --size SIZE
 ### StyleGAN2
 python train.py --batch BATCH_SIZE LMDB_PATH
 
-ex) python train.py --batch=8 --ckpt=ffhq256.pt --freezeG=4 --freezeD=3 --augment --path=LMDB_PATH --expr_dir=Experiment_Directory --gpu=CUDA:0
+ex) python train.py --batch=8 --ckpt=ffhq256.pt --freezeG=4 --freezeD=3 --augment --path=LMDB_PATH --expr_dir=Experiment_Directory --gpu=cuda:0
 
 ### StructureLoss
-ex) python train.py --batch=8 --ckpt=ffhq256.pt --structure_loss=2 --freezeD=3 --augment --path=LMDB_PATH --expr_dir=Experiment_Directory --gpu=CUDA:0
+ex) python train.py --batch=8 --ckpt=ffhq256.pt --structure_loss=2 --freezeD=3 --augment --path=LMDB_PATH --expr_dir=Experiment_Directory --gpu=cuda:0
 
 ### FreezeSG
-ex) python train.py --batch=8 --ckpt=ffhq256.pt --freezeStyle=2 --freezeG=4 --freezeD=3 --augment --path=LMDB_PATH --expr_dir=Experiment_Directory --gpu=CUDA:0
+ex) python train.py --batch=8 --ckpt=ffhq256.pt --freezeStyle=2 --freezeG=4 --freezeD=3 --augment --path=LMDB_PATH --expr_dir=Experiment_Directory --gpu=cuda:0
 
 ## Evaluation
 
