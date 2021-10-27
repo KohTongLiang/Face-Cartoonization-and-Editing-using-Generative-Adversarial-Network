@@ -66,10 +66,19 @@ def sample_data(loader):
 
 
 def d_logistic_loss(real_pred, fake_pred):
-    real_loss = F.softplus(-real_pred)
-    fake_loss = F.softplus(fake_pred)
+    real_loss = 0
+    fake_loss = 0
+    real_score = 0
+    fake_score = 0
+    # real_loss = F.softplus(-real_pred)
+    # fake_loss = F.softplus(fake_pred)
+    for i,j in zip(real_pred, fake_pred):
+        real_loss += F.softplus(-i)
+        fake_loss += F.softplus(j)
+        real_score += i
+        fake_score += j
 
-    return real_loss.mean() + fake_loss.mean()
+    return real_loss.mean() + fake_loss.mean(), real_score.mean(), fake_score.mean()
 
 
 def d_r1_loss(real_pred, real_img):
@@ -83,9 +92,11 @@ def d_r1_loss(real_pred, real_img):
 
 
 def g_nonsaturating_loss(fake_pred):
-    loss = F.softplus(-fake_pred).mean()
+    loss = 0
+    for i in fake_pred:
+        loss += F.softplus(-fake_pred)
 
-    return loss
+    return loss.mean()
 
 
 def g_path_regularize(fake_img, latents, mean_path_length, decay=0.01):
@@ -243,20 +254,21 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
         else:
             real_img_aug = real_img
 
+        # get loss for each attributes
         fake_pred = discriminator(fake_img)
         real_pred = discriminator(real_img_aug)
-        d_loss = d_logistic_loss(real_pred, fake_pred)
+        d_loss, real_score_mean, fake_score_mean = d_logistic_loss(real_pred, fake_pred)
 
         loss_dict["d"] = d_loss
-        loss_dict["real_score"] = real_pred.mean()
-        loss_dict["fake_score"] = fake_pred.mean()
+        loss_dict["real_score"] = real_score_mean
+        loss_dict["fake_score"] = fake_score_mean
 
         discriminator.zero_grad()
         d_loss.backward()
         d_optim.step()
 
         if args.augment and args.augment_p == 0:
-            ada_aug_p = ada_augment.tune(real_pred)
+            ada_aug_p = ada_augment.tune(real_pred[0])
             r_t_stat = ada_augment.r_t_stat
 
         d_regularize = i % args.d_reg_every == 0
@@ -271,10 +283,10 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
                 real_img_aug = real_img
 
             real_pred = discriminator(real_img_aug)
-            r1_loss = d_r1_loss(real_pred, real_img)
+            r1_loss = d_r1_loss(real_pred[0], real_img)
 
             discriminator.zero_grad()
-            (args.r1 / 2 * r1_loss * args.d_reg_every + 0 * real_pred[0]).backward()
+            (args.r1 / 2 * r1_loss * args.d_reg_every + 0 * real_pred[0][0]).backward()
 
             d_optim.step()
 
@@ -337,7 +349,7 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
             fake_img, _ = augment(fake_img, ada_aug_p)
 
         fake_pred = discriminator(fake_img)
-        g_loss = g_nonsaturating_loss(fake_pred)
+        g_loss = g_nonsaturating_loss(fake_pred[0])
 
         loss_dict["g"] = g_loss
 

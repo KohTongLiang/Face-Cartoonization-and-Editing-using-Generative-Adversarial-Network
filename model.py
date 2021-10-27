@@ -727,22 +727,57 @@ class Discriminator(nn.Module):
         )
 
     def forward(self, input):
+        outputs = []
+
+        batch, channel, height, width = input.shape
+        face = torch.zeros(batch, channel, height, width, device='cuda')
+        nose = torch.zeros(batch, channel, height, width, device='cuda')
+        mouth = torch.zeros(batch, channel, height, width, device='cuda')
+        eyes = torch.zeros(batch, channel, height, width, device='cuda')
+
+        x, y =  50,102
+        width, height = 146, 102
+        face[:, :, y:y+height, x:x+width] = input[:, :, y:y+height, x:x+width]
+
+        x, y =  86,134
+        width, height = 86, 46
+        nose[:, :, y:y+height, x:x+width] = input[:, :, y:y+height, x:x+width]
+
+        x, y =  50,174
+        width, height = 146, 46
+        mouth[:, :, y:y+height, x:x+width] = input[:, :, y:y+height, x:x+width]
+        
+        x, y =  50,102
+        width, height = 146, 46
+        eyes[:, :, y:y+height, x:x+width] = input[:, :, y:y+height, x:x+width]
+        
+
         out = self.convs(input)
+        
+        dis_input = [out, self.convs(face), self.convs(nose), self.convs(mouth), self.convs(eyes)]
 
         batch, channel, height, width = out.shape
-        group = min(batch, self.stddev_group)
-        stddev = out.view(
-            group, -1, self.stddev_feat, channel // self.stddev_feat, height, width
-        )
-        stddev = torch.sqrt(stddev.var(0, unbiased=False) + 1e-8)
-        stddev = stddev.mean([2, 3, 4], keepdims=True).squeeze(2)
-        stddev = stddev.repeat(group, 1, height, width)
-        out = torch.cat([out, stddev], 1)
-        out = self.final_conv(out)
-        out = out.view(batch, -1)
-        out = self.final_linear(out)
 
-        return out
+        i = 0
+        for i in range(5):
+            out = dis_input[i]
+
+            group = min(batch, self.stddev_group)
+            stddev = out.view(
+                group, -1, self.stddev_feat, channel // self.stddev_feat, height, width
+            )
+            stddev = torch.sqrt(stddev.var(0, unbiased=False) + 1e-8)
+            stddev = stddev.mean([2, 3, 4], keepdims=True).squeeze(2)
+            stddev = stddev.repeat(group, 1, height, width)
+            out = torch.cat([out, stddev], 1)
+            out = self.final_conv(out)
+            out = out.view(batch, -1)
+            out = self.final_linear(out)
+
+            outputs.append(out)
+            i += 1
+
+        return outputs
 
 
 class Encoder(nn.Module):
