@@ -1,26 +1,24 @@
 import argparse
+from ctypes import resize
 import math
 import random
 import os
-
 import numpy as np
+import lpips
 import torch
 from torch import nn, autograd, optim
 from torch.nn import functional as F
 from torch.utils import data
 import torch.distributed as dist
 from torchvision import transforms, utils
+from torchvision.transforms.transforms import Resize
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 
 try:
     import wandb
-
 except ImportError:
     wandb = None
-
-
-#import nsml
 
 from dataset import MultiResolutionDataset
 from distributed import (
@@ -33,23 +31,19 @@ from distributed import (
 from op import conv2d_gradfix
 from non_leaking import augment, AdaptiveAugment
 
-
 def data_sampler(dataset, shuffle, distributed):
     if distributed:
         return data.distributed.DistributedSampler(dataset, shuffle=shuffle)
 
     if shuffle:
         return data.RandomSampler(dataset)
-
     else:
         return data.SequentialSampler(dataset)
-
 
 def requires_grad(model, flag=True, target_layer=None):
     for name, param  in model.named_parameters():
         if target_layer is None or target_layer in name:
             param.requires_grad = flag
-
 
 def accumulate(model1, model2, decay=0.999):
     par1 = dict(model1.named_parameters())
@@ -58,19 +52,16 @@ def accumulate(model1, model2, decay=0.999):
     for k in par1.keys():
         par1[k].data.mul_(decay).add_(par2[k].data, alpha=1 - decay)
 
-
 def sample_data(loader):
     while True:
         for batch in loader:
             yield batch
-
 
 def d_logistic_loss(real_pred, fake_pred):
     real_loss = F.softplus(-real_pred)
     fake_loss = F.softplus(fake_pred)
 
     return real_loss.mean() + fake_loss.mean()
-
 
 def d_r1_loss(real_pred, real_img):
     with conv2d_gradfix.no_weight_gradients():
@@ -81,12 +72,10 @@ def d_r1_loss(real_pred, real_img):
 
     return grad_penalty
 
-
 def g_nonsaturating_loss(fake_pred):
     loss = F.softplus(-fake_pred).mean()
 
     return loss
-
 
 def g_path_regularize(fake_img, latents, mean_path_length, decay=0.01):
     noise = torch.randn_like(fake_img) / math.sqrt(
@@ -103,7 +92,6 @@ def g_path_regularize(fake_img, latents, mean_path_length, decay=0.01):
 
     return path_penalty, path_mean.detach(), path_lengths
 
-
 def make_noise(batch, latent_dim, n_noise, device):
     if n_noise == 1:
         return torch.randn(batch, latent_dim, device=device)
@@ -112,7 +100,6 @@ def make_noise(batch, latent_dim, n_noise, device):
 
     return noises
 
-
 def mixing_noise(batch, latent_dim, prob, device):
     if prob > 0 and random.random() < prob:
         return make_noise(batch, latent_dim, 2, device)
@@ -120,18 +107,67 @@ def mixing_noise(batch, latent_dim, prob, device):
     else:
         return [make_noise(batch, latent_dim, 1, device)]
 
-
 def set_grad_none(model, targets):
     for n, p in model.named_parameters():
         if n in targets:
             p.grad = None
 
+def perceptual_loss(loss_fn_vgg, real_img, fake_img):
+    p_loss = 0
 
-def train(args, loader, generator, generator_source, discriminator, g_optim, d_optim, g_ema, device):
+    # p loss face
+    x, y =  50,102
+    width, height = 146, 102
+    p_loss = p_loss + loss_fn_vgg(real_img[:, :, y:y+height, x:x+width], fake_img[:, :, y:y+height, x:x+width])
+
+    # p loss eyes
+    x, y =  50,102
+    width, height = 146, 46
+    p_loss = p_loss + loss_fn_vgg(real_img[:, :, y:y+height, x:x+width], fake_img[:, :, y:y+height, x:x+width])
+
+    # p loss nose
+    x, y =  86,134
+    width, height = 86, 46
+    p_loss = p_loss + loss_fn_vgg(real_img[:, :, y:y+height, x:x+width], fake_img[:, :, y:y+height, x:x+width])
+
+    # p loss mouth
+    x, y =  50,174
+    width, height = 146, 46
+    p_loss = p_loss + loss_fn_vgg(real_img[:, :, y:y+height, x:x+width], fake_img[:, :, y:y+height, x:x+width])
+
+    return p_loss.mean()
+
+def get_feature(img, feature_type):
+    output = img
+
+    if feature_type == 'face':
+        x, y =  50,102
+        width, height = 146, 102
+        output = img[:, :, y:y+height, x:x+width]
+    elif feature_type == 'eyes':
+        x, y =  50,102
+        width, height = 146, 46
+        output = img[:, :, y:y+height, x:x+width]
+    elif feature_type == 'nose':
+        x, y =  86,134
+        width, height = 86, 46
+        output = img[:, :, y:y+height, x:x+width]
+    elif feature_type == 'mouth':
+        x, y =  50,174
+        width, height = 146, 46
+        output = img[:, :, y:y+height, x:x+width]
+    
+    transform = Resize(size=(256,256))
+    return transform(output)
+
+def train(args, loader, generator, generator_source, discriminator, g_optim, d_optim, g_ema, device, feature_discriminators):
     # create directories
     save_dir = args.expr_dir
     os.makedirs(save_dir, 0o777, exist_ok=True)
     os.makedirs(save_dir + "/checkpoints", 0o777, exist_ok=True)
+
+    # create lipis model
+    loss_fn_vgg = lpips.PerceptualLoss(net='vgg')
 
     # create tensorboard log file in experiment directory
     writer = SummaryWriter(save_dir)
@@ -143,6 +179,11 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
 
     # definitions
     mean_path_length = 0 # shortest path between a pair of nodes
+    
+    face_loss_val = 0
+    eyes_loss_val = 0
+    nose_loss_val = 0
+    mouth_loss_val = 0
     d_loss_val = 0 # discriminator loss
     g_loss_val = 0 # generator loss
     r1_loss = torch.tensor(0.0, device=device) # r1 regularization
@@ -150,14 +191,22 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
     path_lengths = torch.tensor(0.0, device=device) # path length regularization
     mean_path_length_avg = 0 # mean average path length regularization
     loss_dict = {} # loss dictionary
-    ###
 
+    # distributed settings settings
     if args.distributed:
         g_module = generator.module
         d_module = discriminator.module
+        d_face_module = feature_discriminators['face'].module
+        d_eyes_module = feature_discriminators['eyes'].module
+        d_nose_module = feature_discriminators['nose'].module
+        d_mouth_module = feature_discriminators['mouth'].module
     else:
         g_module = generator
         d_module = discriminator
+        d_face_module = feature_discriminators['face']
+        d_eyes_module = feature_discriminators['eyes']
+        d_nose_module = feature_discriminators['nose']
+        d_mouth_module = feature_discriminators['mouth']
 
     accum = 0.5 ** (32 / (10 * 1000)) # gradient accumulation
     ada_aug_p = args.augment_p if args.augment_p > 0 else 0.0 # adaptive augmentation
@@ -166,7 +215,8 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
     if args.augment and args.augment_p == 0:
         ada_augment = AdaptiveAugment(args.ada_target, args.ada_length, 8, device)
 
-    sample_z = torch.randn(args.n_sample, args.latent, device=device) # sample image from latent space
+    # for sampling an image
+    # sample_z = torch.randn(args.n_sample, args.latent, device=device)
 
     # main training loop
     for idx in pbar:
@@ -183,84 +233,76 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
         requires_grad(generator, False) # freezes generator
         requires_grad(discriminator, False) # freezes discriminator
 
-        #-------------------------
-        # Update Discriminator
-        #-------------------------
-        # Freeze G and D
-        if args.freezeG > 0 and args.freezeD > 0:
-            ## Freeze Generator and Freeze Discriminator
-            # G
-            for layer in range(args.freezeG, generator.num_layers):
-                requires_grad(generator, False, target_layer=f'convs.{generator.num_layers-2-2*layer}')
-                requires_grad(generator, False, target_layer=f'convs.{generator.num_layers-3-2*layer}')
-                requires_grad(generator, False, target_layer=f'to_rgbs.{generator.log_size-3-layer}')
-            # D
-            for layer in range(args.freezeD):
-                requires_grad(discriminator, True, target_layer=f'convs.{discriminator.log_size-2-layer}')
-            requires_grad(discriminator, True, target_layer=f'final_') #final_conv, final_linear
-        elif args.freezeG > 0 :
-            ## Freeze Generator
-            # G
-            for layer in range(args.freezeG, generator.num_layers):
-                requires_grad(generator, False, target_layer=f'convs.{generator.num_layers-2-2*layer}')
-                requires_grad(generator, False, target_layer=f'convs.{generator.num_layers-3-2*layer}')
-                requires_grad(generator, False, target_layer=f'to_rgbs.{generator.log_size-3-layer}')
-            # D
-            requires_grad(discriminator, True)
-        elif args.freezeD > 0 :
-            ## Freeze Discriminator
-            # G
-            requires_grad(generator, False)
-            # D
-            for layer in range(args.freezeD):
-                requires_grad(discriminator, True, target_layer=f'convs.{discriminator.log_size-2-layer}')
-            requires_grad(discriminator, True, target_layer=f'final_') #final_conv, final_linear
-        else :
-            ## Freeze Generator
-            # G
-            requires_grad(generator, False)
-            # D
-            requires_grad(discriminator, True)
+                            ###########################
+                            ### Train Discriminator ###
+                            ###########################
 
-        #--------------------------
+        requires_grad(generator, False)
+        requires_grad(discriminator, True)
+        requires_grad(feature_discriminators['face'], True)
+        requires_grad(feature_discriminators['eyes'], True)
+        requires_grad(feature_discriminators['nose'], True)
+        requires_grad(feature_discriminators['mouth'], True)
 
-        # generate noise
+        # generate noise and fake image with it
         noise = mixing_noise(args.batch, args.latent, args.mixing, device)
+        fake_img, _ = generator(noise)
 
-        # FreezeSG
-        if args.freezeStyle >= 0:            
-            _, latent = generator_source(noise, return_latents=True)
-            fake_img, _ = generator(noise, inject_index=args.freezeStyle, put_latent = latent)
-        # Method: Layer Swapping method
-        elif args.layerSwap > 0:
-            swap_num = args.layerSwap
-            fake_img, save_swap_layer = generator_source(noise, swap=True, swap_layer_num=swap_num, randomize_noise=False,)
-            fake_img, _ = generator(noise, swap=True, swap_layer_num=swap_num, swap_layer_tensor=save_swap_layer, randomize_noise=False,)
-        elif args.freezeFC:      
-            _, latent = generator_source(noise, return_latents=True)
-            fake_img, _ = generator(noise, freezeFC = latent)
-        else:
-            # passe noise into generator to generate fake image
-            fake_img, _ = generator(noise)
-
-        ## Perform data augmentation
+        ## Perform data augmentation if augment is set in arguments
         if args.augment:
             real_img_aug, _ = augment(real_img, ada_aug_p)
             fake_img, _ = augment(fake_img, ada_aug_p)
         else:
             real_img_aug = real_img
 
-        ## discriminator makes prediction
+        # discriminator makes prediction
         fake_pred = discriminator(fake_img) # predict fake image generated from noise
-        real_pred = discriminator(real_img_aug) # preduct ground truth
-        d_loss = d_logistic_loss(real_pred, fake_pred) # sum of average of softplus -real_pred and fake_pred
+        real_pred = discriminator(real_img_aug) # predict ground truth
 
-        ## update discriminator weights
+        # feature based discrimination
+        face_fake_pred = feature_discriminators['face'](get_feature(fake_img, 'face'))
+        face_real_pred = feature_discriminators['face'](get_feature(real_img, 'face'))
+        eyes_fake_pred = feature_discriminators['eyes'](get_feature(fake_img, 'eyes'))
+        eyes_real_pred = feature_discriminators['eyes'](get_feature(real_img, 'eyes'))
+        nose_fake_pred = feature_discriminators['nose'](get_feature(fake_img, 'nose'))
+        nose_real_pred = feature_discriminators['nose'](get_feature(real_img, 'nose'))
+        mouth_fake_pred = feature_discriminators['mouth'](get_feature(fake_img, 'mouth'))
+        mouth_real_pred = feature_discriminators['mouth'](get_feature(real_img, 'mouth'))
+
+        face_loss = d_logistic_loss(face_real_pred, face_fake_pred)
+        eyes_loss = d_logistic_loss(eyes_real_pred, eyes_fake_pred)
+        nose_loss = d_logistic_loss(nose_real_pred, nose_fake_pred)
+        mouth_loss = d_logistic_loss(mouth_real_pred, mouth_fake_pred)
+
+        d_loss = d_logistic_loss(real_pred, fake_pred) # sum of average of softplus -real_pred and fake_pred
+        d_loss = d_loss + face_loss + eyes_loss + nose_loss + mouth_loss
+
+        # update discriminator weights
+        loss_dict["d_face"] = face_loss
+        loss_dict["d_eyes"] = eyes_loss
+        loss_dict["d_nose"] = nose_loss
+        loss_dict["d_mouth"] = mouth_loss
         loss_dict["d"] = d_loss
+        loss_dict["face_real_score"] = real_pred.mean()
+        loss_dict["face_fake_score"] = fake_pred.mean()
+        loss_dict["eyes_real_score"] = real_pred.mean()
+        loss_dict["eyes_fake_score"] = fake_pred.mean()
+        loss_dict["nose_real_score"] = real_pred.mean()
+        loss_dict["nose_fake_score"] = fake_pred.mean()
+        loss_dict["mouth_real_score"] = real_pred.mean()
+        loss_dict["mouth_fake_score"] = fake_pred.mean()
         loss_dict["real_score"] = real_pred.mean()
         loss_dict["fake_score"] = fake_pred.mean()
 
+        feature_discriminators['face'].zero_grad()
+        feature_discriminators['eyes'].zero_grad()
+        feature_discriminators['nose'].zero_grad()
+        feature_discriminators['mouth'].zero_grad()
         discriminator.zero_grad() # reset gradient
+        face_loss.backward(retain_graph=True)
+        eyes_loss.backward(retain_graph=True)
+        nose_loss.backward(retain_graph=True)
+        mouth_loss.backward(retain_graph=True)
         d_loss.backward() # backpropagate
         d_optim.step() # perform single optimization step
 
@@ -269,9 +311,8 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
             ada_aug_p = ada_augment.tune(real_pred)
             r_t_stat = ada_augment.r_t_stat
 
-        # d regularizer
+        # Dsicriminator regularization
         d_regularize = i % args.d_reg_every == 0
-
         if d_regularize:
             real_img.requires_grad = True
 
@@ -290,73 +331,49 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
 
         loss_dict["r1"] = r1_loss
 
+                            ##################################
+                            ### End of Train Discriminator ###
+                            ##################################
 
-        #-------------------------
-        # Update Generator
-        #-------------------------
-        # Freeze !!!
-        if args.freezeG > 0 and args.freezeD > 0:
-            # G
-            for layer in range(args.freezeG, generator.num_layers):
-                requires_grad(generator, True, target_layer=f'convs.{generator.num_layers-2-2*layer}')
-                requires_grad(generator, True, target_layer=f'convs.{generator.num_layers-3-2*layer}')
-                requires_grad(generator, True, target_layer=f'to_rgbs.{generator.log_size-3-layer}')
-            # D
-            for layer in range(args.freezeD):
-                requires_grad(discriminator, False, target_layer=f'convs.{discriminator.log_size-2-layer}')
-            requires_grad(discriminator, False, target_layer=f'final_') #final_conv, final_linear
-        elif args.freezeG > 0 :
-            # G
-            for layer in range(args.freezeG, generator.num_layers):
-                requires_grad(generator, True, target_layer=f'convs.{generator.num_layers-2-2*layer}')
-                requires_grad(generator, True, target_layer=f'convs.{generator.num_layers-3-2*layer}')
-                requires_grad(generator, True, target_layer=f'to_rgbs.{generator.log_size-3-layer}')
-            # D
-            requires_grad(discriminator, False)
-        elif args.freezeD > 0 :
-            # G
-            requires_grad(generator, True)
-            # D
-            for layer in range(args.freezeD):
-                requires_grad(discriminator, False, target_layer=f'convs.{discriminator.log_size-2-layer}')
-            requires_grad(discriminator, False, target_layer=f'final_') # final_conv, final_linear
-        else :
-            # G
-            requires_grad(generator, True)
-            # D
-            requires_grad(discriminator, False)
+                                #######################
+                                ### Train Generator ###
+                                #######################
+                            
+        requires_grad(generator, True)
+        requires_grad(discriminator, False)
+        requires_grad(feature_discriminators['face'], False)
+        requires_grad(feature_discriminators['eyes'], False)
+        requires_grad(feature_discriminators['nose'], False)
+        requires_grad(feature_discriminators['mouth'], False)
 
         #--------------------------
         
         noise = mixing_noise(args.batch, args.latent, args.mixing, device)
-
-        # Method: Freeze Style and Vector
-        if args.freezeStyle >= 0:            
-            fake_img, latent = generator_source(noise, return_latents=True)
-            fake_img, _ = generator(noise, inject_index=args.freezeStyle, put_latent = latent)
-        # Method: Layer Swapping method
-        elif args.layerSwap > 0:
-            swap_num = args.layerSwap
-            fake_img, save_swap_layer = generator_source(noise, swap=True, swap_layer_num=swap_num, randomize_noise=False,)
-            fake_img, _ = generator(noise, swap=True, swap_layer_num=swap_num, swap_layer_tensor=save_swap_layer, randomize_noise=False,)
-        else:
-            fake_img, _ = generator(noise)
+        fake_img, _ = generator(noise)
 
         if args.augment:
             fake_img, _ = augment(fake_img, ada_aug_p)
 
         fake_pred = discriminator(fake_img)
-        g_loss = g_nonsaturating_loss(fake_pred)
+        face_fake_pred = feature_discriminators['face'](get_feature(fake_img, 'face'))
+        eyes_fake_pred = feature_discriminators['eyes'](get_feature(fake_img, 'eyes'))
+        nose_fake_pred = feature_discriminators['nose'](get_feature(fake_img, 'nose'))
+        mouth_fake_pred = feature_discriminators['mouth'](get_feature(fake_img, 'mouth'))
+        g_loss = g_nonsaturating_loss(fake_pred) + g_nonsaturating_loss(face_fake_pred) + g_nonsaturating_loss(eyes_fake_pred) + g_nonsaturating_loss(nose_fake_pred) + g_nonsaturating_loss(mouth_fake_pred)
 
+        ## perform perceptual loss
+        p_loss = perceptual_loss(loss_fn_vgg, real_img, fake_img)
+
+        g_loss = g_loss + p_loss
         loss_dict["g"] = g_loss
 
         # Method: Structure Loss
-        if args.structure_loss >= 0:
-            for layer in range(args.structure_loss):
-                _, latent_med_sor = generator_source(noise, swap=True, swap_layer_num=layer+1)
-                _, latent_med_tar = generator(noise, swap=True, swap_layer_num=layer+1)
-                # set structure parameter in arguments source_impt. Default 1
-                g_loss = g_loss + (args.source_impt * F.mse_loss(latent_med_tar, latent_med_sor)) # for each layer calculate mse loss between source and target rgb ouputs
+        # if args.structure_loss >= 0:
+        #     for layer in range(args.structure_loss):
+        #         _, latent_med_sor = generator_source(noise, swap=True, swap_layer_num=layer+1)
+        #         _, latent_med_tar = generator(noise, swap=True, swap_layer_num=layer+1)
+        #         # set structure parameter in arguments source_impt. Default 1
+        #         g_loss = g_loss + (args.source_impt * F.mse_loss(latent_med_tar, latent_med_sor)) # for each layer calculate mse loss between source and target rgb ouputs
                 
         generator.zero_grad()
         g_loss.backward()
@@ -364,6 +381,7 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
 
         g_regularize = i % args.g_reg_every == 0
 
+        # generator regularization
         if args.freezeG < 0 and g_regularize:
             path_batch_size = max(1, args.batch // args.path_batch_shrink)
             noise = mixing_noise(path_batch_size, args.latent, args.mixing, device)
@@ -380,12 +398,13 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
                 weighted_path_loss += 0 * fake_img[0, 0, 0, 0]
 
             weighted_path_loss.backward()
-
             g_optim.step()
-
             mean_path_length_avg = (
                 reduce_sum(mean_path_length).item() / get_world_size()
             )
+                                ##############################
+                                ### End of Train Generator ###
+                                ##############################
 
         loss_dict["path"] = path_loss
         loss_dict["path_length"] = path_lengths.mean()
@@ -395,9 +414,21 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
         loss_reduced = reduce_loss_dict(loss_dict)
 
         d_loss_val = loss_reduced["d"].mean().item()
+        d_face_loss_val = loss_dict["d_face"].mean().item()
+        d_eyes_loss_val = loss_dict["d_eyes"].mean().item()
+        d_nose_loss_val = loss_dict["d_nose"].mean().item()
+        d_mouth_loss_val = loss_dict["d_mouth"].mean().item()
         g_loss_val = loss_reduced["g"].mean().item()
         r1_val = loss_reduced["r1"].mean().item()
         path_loss_val = loss_reduced["path"].mean().item()
+        face_real_score_val = loss_dict["face_real_score"].mean().item()
+        face_fake_score_val = loss_dict["face_fake_score"].mean().item()
+        eyes_real_score_vak = loss_dict["eyes_real_score"].mean().item()
+        eyes_fake_score_val = loss_dict["eyes_fake_score"].mean().item()
+        nose_real_score_val = loss_dict["nose_real_score"].mean().item()
+        nose_fake_score_val = loss_dict["nose_fake_score"].mean().item()
+        mouth_real_score_val = loss_dict["mouth_real_score"].mean().item()
+        mouth_fake_score_val = loss_dict["mouth_fake_score"].mean().item()
         real_score_val = loss_reduced["real_score"].mean().item()
         fake_score_val = loss_reduced["fake_score"].mean().item()
         path_length_val = loss_reduced["path_length"].mean().item()
@@ -413,6 +444,10 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
 
             # R1_loss=r1_val, Path_loss=path_loss_val, mean_path=mean_path_length_avg, augment=ada_aug_p)
             writer.add_scalar('G_Loss/Epoch', g_loss_val, i)
+            writer.add_scalar('D_Face_Loss/Epoch', d_face_loss_val, i)
+            writer.add_scalar('D_Eyes_Loss/Epoch', d_eyes_loss_val, i)
+            writer.add_scalar('D_Nose_Loss/Epoch', d_nose_loss_val, i)
+            writer.add_scalar('D_Mouth_Loss/Epoch', d_mouth_loss_val, i)
             writer.add_scalar('D_Loss/Epoch', d_loss_val, i)
             writer.add_scalar('R1_Loss/Epoch', r1_val, i)
             writer.add_scalar('Path_Loss/Epoch', path_loss_val, i)
@@ -452,6 +487,10 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
                 torch.save(
                     {
                         "g": g_module.state_dict(),
+                        "d_face" : d_face_module.state_dict(),
+                        "d_eyes" : d_eyes_module.state_dict(),        
+                        "d_nose" : d_nose_module.state_dict(),
+                        "d_mouth" : d_mouth_module.state_dict(),
                         "d": d_module.state_dict(),
                         "g_ema": g_ema.state_dict(),
                         "g_optim": g_optim.state_dict(),
@@ -467,7 +506,6 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="StyleGAN2 trainer")
-
     parser.add_argument("--path", type=str, help="path to the lmdb dataset")
     parser.add_argument('--arch', type=str, default='stylegan2', help='model architectures (stylegan2 | swagan)')
     parser.add_argument(
@@ -636,7 +674,8 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    device = args.gpu
+    device = f'cuda:{args.gpu}'
+    # device = args.gpu
 
     n_gpu = int(os.environ["WORLD_SIZE"]) if "WORLD_SIZE" in os.environ else 1
     args.distributed = n_gpu > 1
@@ -651,7 +690,7 @@ if __name__ == "__main__":
     args.start_iter = 0
 
     if args.arch == 'stylegan2':
-        from model import Generator, Discriminator
+        from model import Generator, Discriminator, Feature_Discriminator
 
     #----------------------------
     # Make Model
@@ -668,6 +707,18 @@ if __name__ == "__main__":
     discriminator = Discriminator(
         args.size, channel_multiplier=args.channel_multiplier
     ).to(device)
+    
+    feature_discriminators = {
+        'face': Feature_Discriminator(args.size),
+        'eyes': Feature_Discriminator(args.size),
+        'nose': Feature_Discriminator(args.size),
+        'mouth': Feature_Discriminator(args.size)
+    }
+
+    feature_discriminators['face'].to(device)
+    feature_discriminators['eyes'].to(device)
+    feature_discriminators['nose'].to(device)
+    feature_discriminators['mouth'].to(device)
 
     g_ema = Generator(
         args.size, args.latent, args.n_mlp, channel_multiplier=args.channel_multiplier
@@ -715,6 +766,11 @@ if __name__ == "__main__":
         g_optim.load_state_dict(ckpt["g_optim"])
         d_optim.load_state_dict(ckpt["d_optim"])
 
+        if 'd_face' in ckpt and 'd_eyes' in ckpt and 'd_nose' in ckpt and 'd_mouth' in ckpt:
+            feature_discriminators['face'].load_state_dict(ckpt['d_face'], strict = False)
+            feature_discriminators['eyes'].load_state_dict(ckpt['d_eyes'], strict = False)
+            feature_discriminators['nose'].load_state_dict(ckpt['d_nose'], strict = False)
+            feature_discriminators['mouth'].load_state_dict(ckpt['d_mouth'], strict = False)
 
 
     #----------------------------
@@ -765,4 +821,4 @@ if __name__ == "__main__":
     # Train !
     #----------------------------
 
-    train(args, loader, generator, generator_source, discriminator, g_optim, d_optim, g_ema, device)
+    train(args, loader, generator, generator_source, discriminator, g_optim, d_optim, g_ema, device, feature_discriminators)

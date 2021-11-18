@@ -728,7 +728,6 @@ class Discriminator(nn.Module):
 
     def forward(self, input):
         out = self.convs(input)
-
         batch, channel, height, width = out.shape
         group = min(batch, self.stddev_group)
         stddev = out.view(
@@ -744,6 +743,31 @@ class Discriminator(nn.Module):
 
         return out
 
+# perform discrimination on facial features extracted from real and fake image
+class Feature_Discriminator(nn.Module):
+    def __init__(self, size=256, in_channel=3):
+        super().__init__()
+        nc = in_channel
+        ndf = size
+        self.main = nn.Sequential(
+            nn.Conv2d(nc, ndf, 4, 2, 1, bias=False),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ndf * 2),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ndf * 4),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(ndf * 4, ndf * 8, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ndf * 8),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(ndf * 8, 1, 4, 1, 0, bias=False),
+            nn.Sigmoid()
+        )
+    
+    def forward(self, input):
+        out = self.main(input)
+        return out
 
 class Encoder(nn.Module):
     def __init__(self, size, w_dim=512):
