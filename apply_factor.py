@@ -1,34 +1,32 @@
 import os
 import argparse
-
 import torch
 from torchvision import utils
 import PIL.Image as pilimg
-
 from torchvision.utils import make_grid
-
 from model import Generator
 
 def make_video(args):
-
-
     # Eigen-Vector
     eigvec = torch.load(args.factor)["eigvec"].to(args.device)
 
     # =============================================
 
-    # Genearaotr1
+    # Generator 1
     network1 = torch.load(args.ckpt)
 
     g1 = Generator(256, 512, 8, channel_multiplier=2).to(args.device)
     g1.load_state_dict(network1["g_ema"], strict=False)
+    g1.to(args.device)
     trunc1 = g1.mean_latent(4096)
 
     # Generator2
+    # Target generator
     network2 = torch.load(args.ckpt2)
 
     g2 = Generator(256, 512, 8, channel_multiplier=2).to(args.device)
     g2.load_state_dict(network2["g_ema"], strict=False)
+    g2.to(args.device)
     trunc2 = g2.mean_latent(4096)
 
     # latent
@@ -42,7 +40,6 @@ def make_video(args):
     index=args.index
     degree=args.degree
 
-
     # =============================================
     
     images = []
@@ -51,11 +48,15 @@ def make_video(args):
 
         direction = 0.5 * deg * eigvec[:, index].unsqueeze(0)
 
-        img1, _ = g1(
+        img1, save_swap_layer = g1(
             [latent + direction],
             truncation=args.truncation,
             truncation_latent=trunc1,
             input_is_latent=True,
+            return_latents=False,
+            swap=True,
+            swap_layer_num=2,
+            randomize_noise=True,
         )
 
         img2, _ = g2(
@@ -63,6 +64,10 @@ def make_video(args):
             truncation=args.truncation,
             truncation_latent=trunc2,
             input_is_latent=True,
+            randomize_noise=True,
+            swap=True,
+            swap_layer_num=2,
+            swap_layer_tensor=save_swap_layer,
         )
 
         grid = make_grid(torch.cat([img1, img2], 0),
@@ -75,8 +80,6 @@ def make_video(args):
         images.append(img)
 
     images[0].save(f'{args.outdir}/{args.video_name}.gif', save_all=True, append_images=images[1:], loop=0, duration=100)
-
-
 
 if __name__ == "__main__":
     torch.set_grad_enabled(False)
@@ -110,7 +113,7 @@ if __name__ == "__main__":
         "--truncation", type=float, default=0.7, help="truncation factor"
     )
     parser.add_argument(
-        "--device", type=str, default="cuda", help="device to run the model"
+        "--device", type=str, default="cuda:1", help="device to run the model"
     )
     parser.add_argument(
         "--out_prefix",
@@ -144,17 +147,15 @@ if __name__ == "__main__":
     # =============================================
 
     # directory to save image
-
     if not os.path.isdir(f'{args.outdir}'):
         os.makedirs(f'{args.outdir}')
 
 
     # Eigen-Vector
-
     eigvec = torch.load(args.factor)["eigvec"].to(args.device)
 
     # Generator
-    ckpt = torch.load(args.ckpt)
+    ckpt = torch.load(args.ckpt, map_location='cpu')
     g = Generator(args.size, 512, 8, channel_multiplier=args.channel_multiplier).to(args.device)
     g.load_state_dict(ckpt["g_ema"], strict=False)
 
@@ -165,7 +166,6 @@ if __name__ == "__main__":
     latent = g.get_latent(latent)
 
     # direction
-
     direction = args.degree * eigvec[:, args.index].unsqueeze(0)
 
     img, _ = g(

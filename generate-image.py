@@ -73,6 +73,8 @@ def image2image():
 
     print("Beginning Generations")
 
+    img_latents = []
+
     with torch.no_grad():
 
         latent1 = torch.randn(1, 14, 512, device=device)
@@ -101,17 +103,165 @@ def image2image():
                 img_gens.append(imgs_gen1)
 
                 for gen in target_generators:
-                    imgs_gen, _ = gen['gen']([latent_interp],
+                    imgs_gen, img_latent = gen['gen']([latent_interp],
                                         input_is_latent=True,                                     
                                         truncation=config['truncation'],
                                         truncation_latent=gen['trunc'],
                                         randomize_noise=True,
-                                        swap=swap, swap_layer_num=swap_layer_num, swap_layer_tensor=save_swap_layer,
+                                        swap=swap,
+                                        swap_layer_num=swap_layer_num,
+                                        swap_layer_tensor=save_swap_layer,
                                         generator_name=f'{gen["gen_name"]}-img-{i}-step-{j}',
                                         )
                     img_gens.append(imgs_gen)
+                    img_latents.append(img_latent)
             latent1 = latent2
             
+        grid = make_grid(torch.cat(img_gens, 0),
+                            nrow=no_of_networks+1,
+                            normalize=True,
+                            range=(-1,1),
+                            )
+        ndarr = grid.mul(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to('cpu', torch.uint8).numpy()
+        im = pilimg.fromarray(ndarr)
+        im.save(f'./asset/{outdir}/out.png')
+
+        print('Complete')
+
+        # print('Performing Sefa')
+
+        # index=7
+        # degree=15
+        # img_gens = []
+        # for deg in range(int(degree)):
+        #     # direction = 0.5 * deg * eigvec[:, index].unsqueeze(0)
+        #     # latent_interp += direction # image editing
+        #     direction = 0.5 * deg * eigvec[:, index].unsqueeze(0)
+
+        #     for i in img_latents:
+        #         i += direction
+
+        #         for gen in target_generators:
+        #             imgs_gen, _ = gen['gen']([i],
+        #                                 input_is_latent=True,                                     
+        #                                 truncation=config['truncation'],
+        #                                 truncation_latent=gen['trunc'],
+        #                                 randomize_noise=True,
+        #                                 swap=False,
+        #                                 generator_name=f'{gen["gen_name"]}-img-{i}-step-{j}',
+        #                                 )
+        #             img_gens.append(imgs_gen)
+
+        # ndarr = grid.mul(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to('cpu', torch.uint8).numpy()
+        # im = pilimg.fromarray(ndarr)
+        # im.save(f'./asset/{outdir}/sefa.png')
+
+
+def sefa(latent=[], index=7, degree=15):
+    print("Loading Config")
+
+    # load config file
+    config = json.load(open(f'./config/{config_name}.json'))
+
+    # basic configuration
+    device = config['cuda']
+    truncation = 0.7
+
+    # grab list of target networks
+    target_networks = config['networks']
+    target_generators = []
+    no_of_networks = len(target_networks)
+
+    # FFHQ Source Generator
+    network1 = config['source_domain']  #@param ['ffhq256', 'NaverWebtoon', 'NaverWebtoon_StructureLoss', 'NaverWebtoon_FreezeSG', 'Romance101', 'TrueBeauty', 'Disney', 'Disney_StructureLoss', 'Disney_FreezeSG', 'Metface_StructureLoss', 'Metface_FreezeSG']
+    network1 = f'./{network1}.pt' 
+    network1 = torch.load(network1, map_location='cpu')
+
+    g1 = Generator(256, 512, 8, channel_multiplier=2).to(device)
+    g1.load_state_dict(network1["g_ema"], strict=False)
+    g1.to(device)
+    trunc1 = g1.mean_latent(4096)
+
+    # Create generator of each target networks
+    for target in target_networks:
+        print(f'Creating generator for {target}')
+
+        network = target
+        network = f'./{network}.pt'
+        network = torch.load(network, map_location='cpu')
+
+        g = Generator(256, 512, 8, channel_multiplier=2).to(device)
+        g.load_state_dict(network['g_ema'], strict=False)
+        g.to(device)
+        trunc = g.mean_latent(4096)
+        target_generators.append({ 'gen' : g, 'trunc' : trunc, 'gen_name' : target })
+
+    # directory to save image
+    # outdir = 'results_030821' #@param {type:"string"}
+    outdir = config['outdir']
+    if not os.path.isdir(f'{outdir}'):
+        os.makedirs(f'./asset/i2i-sefa/{outdir}', exist_ok=True)
+
+    # Eigen-Vector
+    eigvec = torch.load('./factor.pt')["eigvec"].to(device)
+
+    imgs = []
+    number_of_img = config['number_of_img']
+    number_of_step = config['number_of_step']
+    number_of_step = 2
+    swap = config['swap']
+    swap_layer_num = config['swap_layer_num']
+    # number_of_img = 4 #@param {type:"slider", min:0, max:30, step:1}
+    # number_of_step = 6 #@param {type:"slider", min:0, max:10, step:1
+    # swap = True #@param {type:"boolean"}
+    # swap_layer_num = 2 #@param {type:"slider", min:1, max:6, step:1}
+
+    print("Beginning Generations")
+
+    with torch.no_grad():
+
+        latent1 = torch.randn(1, 14, 512, device=device)
+        latent1 = g1.get_latent(latent1)
+        latent_interp = torch.zeros(1, latent1.shape[1], latent1.shape[2]).to(device)
+
+        img_gens = []
+        for i in range(number_of_img):
+            # latent1
+
+            latent2 = torch.randn(1, 14, 512, device=device)
+            latent2 = g1.get_latent(latent2)
+
+            for j in range(number_of_step):
+
+                latent_interp = latent1 + (latent2-latent1) * float(j/(number_of_step-1))
+
+                for deg in range(int(degree)):
+                    direction = 0.5 * deg * eigvec[:, index].unsqueeze(0)
+                    latent_interp += direction # image editing
+                    latent += direction
+
+                    imgs_gen1, save_swap_layer = g1([latent_interp],
+                                            input_is_latent=True,                                     
+                                            truncation=config['truncation'],
+                                            return_latents=False,
+                                            truncation_latent=trunc1,
+                                            swap=swap, swap_layer_num=swap_layer_num,
+                                            randomize_noise=True,
+                                            generator_name=f'ffhq-img-{i}-step-{j}')
+                    img_gens.append(imgs_gen1)
+
+                    for gen in target_generators:
+                        imgs_gen, _ = gen['gen']([latent],
+                                            input_is_latent=True,                                     
+                                            truncation=config['truncation'],
+                                            truncation_latent=gen['trunc'],
+                                            randomize_noise=True,
+                                            swap=swap, swap_layer_num=swap_layer_num, swap_layer_tensor=save_swap_layer,
+                                            generator_name=f'{gen["gen_name"]}-img-{i}-step-{j}',
+                                            )
+                        img_gens.append(imgs_gen)
+                latent1 = latent2
+                
         grid = make_grid(torch.cat(img_gens, 0),
                             nrow=no_of_networks+1,
                             normalize=True,
@@ -140,7 +290,7 @@ def style_mixing():
 
     # FFHQ Source Generator
     network1 = config['source_domain']  #@param ['ffhq256', 'NaverWebtoon', 'NaverWebtoon_StructureLoss', 'NaverWebtoon_FreezeSG', 'Romance101', 'TrueBeauty', 'Disney', 'Disney_StructureLoss', 'Disney_FreezeSG', 'Metface_StructureLoss', 'Metface_FreezeSG']
-    network1 = f'./networks/{network1}.pt' 
+    network1 = f'./{network1}.pt' 
     network1 = torch.load(network1, map_location='cpu')
 
     g1 = Generator(256, 512, 8, channel_multiplier=2).to(device)
@@ -154,7 +304,7 @@ def style_mixing():
         print(f'Creating generator for {target}')
 
         network = target
-        network = f'./networks/{network}.pt'
+        network = f'./{network}.pt'
         network = torch.load(network, map_location='cpu')
 
         g = Generator(256, 512, 8, channel_multiplier=2).to(device)
@@ -203,7 +353,7 @@ def style_mixing():
                                         truncation=0.7,
                                         return_latents=True,
                                         truncation_latent=trunc1,
-                                        randomize_noise=False,
+                                        randomize_noise=True,
                                         generator_name=f'ffhq-img-{i}-step-{j}')
                 img_gens.append(imgs_gen1)
                 for gen in target_generators:
@@ -252,7 +402,7 @@ def sample_image():
         print(f'Creating generator for {target}')
 
         network = target
-        network = f'./networks/{network}.pt'
+        network = f'./{network}.pt'
         network = torch.load(network, map_location='cpu')
 
         g = Generator(256, 512, 8, channel_multiplier=2).to(device)
@@ -281,7 +431,7 @@ def sample_image():
 
                 imgs_gen, _ = gen['gen']([latent],
                                     input_is_latent=True,                           
-                                    truncation=0.7,
+                                    truncation=config['truncation'],
                                     truncation_latent=gen['trunc'],
                                     generator_name=f'{gen["gen_name"]}-img-{i}',
                                     )
@@ -304,6 +454,8 @@ if __name__ == "__main__":
 
     if mode == 'i2i':
         image2image()
+    elif mode == 'sefa':
+        sefa()
     elif mode == 'sample_image':
         sample_image()
     elif mode == 'style_mixing':
