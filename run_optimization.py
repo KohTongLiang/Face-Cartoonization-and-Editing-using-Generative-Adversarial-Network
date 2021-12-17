@@ -85,6 +85,9 @@ def main(args):
                            randomize_noise=False)
 
         c_loss = clip_loss(img_gen, text_inputs)
+
+        if args.description == '':
+            c_loss = 0
         l2_loss = ((latent_code_init - latent) ** 2).sum()
         loss = c_loss + args.l2_lambda * l2_loss
 
@@ -108,7 +111,6 @@ def main(args):
                                           randomize_noise=False)
                             
             # Save Image
-            
             if args.ckpt2 is not None:
                 
                 torchvision.utils.save_image(
@@ -138,7 +140,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--description", type=str, default="a person with purple hair", help="the text that guides the editing/generation")
+    parser.add_argument("--description", type=str, default='', help="the text that guides the editing/generation")
     parser.add_argument("--ckpt", type=str, default="../pretrained_models/stylegan2-ffhq-config-f.pt", help="pretrained StyleGAN2 weights")
     parser.add_argument("--ckpt2", type=str, default=None, help="pretrained StyleGAN2 weights")
     

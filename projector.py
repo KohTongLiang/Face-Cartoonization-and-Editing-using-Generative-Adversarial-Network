@@ -74,8 +74,6 @@ def make_image(tensor):
 
 
 if __name__ == "__main__":
-    device = "cuda"
-
     # -----------------------------------
     # Parser
     # -----------------------------------
@@ -88,6 +86,9 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--e_ckpt", type=str, default=None, help="path to the encoder checkpoint"
+    )
+    parser.add_argument(
+        "--device", type=str, default='cuda', help="path to the encoder checkpoint"
     )
     parser.add_argument(
         "--size", type=int, default=256, help="output image sizes of the generator"
@@ -142,6 +143,8 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+
+    device = args.device
 
     # =============================================
 
@@ -240,7 +243,7 @@ if __name__ == "__main__":
 
     # PerceptualLoss
     percept = lpips.PerceptualLoss(
-        model="net-lin", net="vgg", use_gpu=device.startswith("cuda")
+        model="net-lin", net="vgg", gpu_ids=[int(device[-1])]
     )
 
 
@@ -257,7 +260,6 @@ if __name__ == "__main__":
     # Training !
 
     for i in pbar:
-
         t = i / args.step
         lr = get_lr(t, args.lr)
 
@@ -300,6 +302,7 @@ if __name__ == "__main__":
         if args.e_ckpt is not None :
             style_loss = F.mse_loss(latent_hat, latent_init)
             loss = args.vgg * p_loss + r_loss + style_loss + args.mse * mse_loss
+            # loss = args.vgg + r_loss + style_loss + args.mse * mse_loss
         else :
             style_loss = 0.0
             loss = args.vgg * p_loss + r_loss + args.mse * mse_loss + args.noise_regularize * n_loss 
