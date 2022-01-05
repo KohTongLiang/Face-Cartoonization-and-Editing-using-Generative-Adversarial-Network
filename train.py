@@ -166,7 +166,7 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
     os.makedirs(save_dir, 0o777, exist_ok=True)
     os.makedirs(save_dir + "/checkpoints", 0o777, exist_ok=True)
 
-    # create lipis model
+    # create lpips model
     loss_fn_vgg = lpips.PerceptualLoss(net='vgg')
 
     # create tensorboard log file in experiment directory
@@ -230,12 +230,12 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
         real_img = next(loader)
         real_img = real_img.to(device)
 
-        requires_grad(generator, False) # freezes generator
-        requires_grad(discriminator, False) # freezes discriminator
-
                             ###########################
                             ### Train Discriminator ###
                             ###########################
+
+        requires_grad(generator, False)
+        requires_grad(discriminator, False)
 
         requires_grad(generator, False)
         requires_grad(discriminator, True)
@@ -306,12 +306,12 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
         d_loss.backward() # backpropagate
         d_optim.step() # perform single optimization step
 
-        ## augmentation to real prediction
+        # augmentation to real prediction
         if args.augment and args.augment_p == 0:
             ada_aug_p = ada_augment.tune(real_pred)
             r_t_stat = ada_augment.r_t_stat
 
-        # Dsicriminator regularization
+        # Discriminator regularisation
         d_regularize = i % args.d_reg_every == 0
         if d_regularize:
             real_img.requires_grad = True
