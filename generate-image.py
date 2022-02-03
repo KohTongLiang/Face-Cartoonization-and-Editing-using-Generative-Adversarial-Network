@@ -66,9 +66,9 @@ def generate_image(latent=None, direction=None, latent1=None, latent2=None):
                 latent1 = g1.get_latent(latent1)
             latent_interp = torch.zeros(1, latent1.shape[1], latent1.shape[2]).to(device)
             for i in range(number_of_img):
-                if latent2 is None:
-                    latent2 = torch.randn(1, 14, 512, device=device)
-                    latent2 = g1.get_latent(latent2)
+                # if latent2 is None:
+                latent2 = torch.randn(1, 14, 512, device=device)
+                latent2 = g1.get_latent(latent2)
 
                 for j in range(number_of_step):
                     if number_of_step == 1:
@@ -111,7 +111,7 @@ def generate_image(latent=None, direction=None, latent1=None, latent2=None):
             ndarr = grid.mul(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to('cpu', torch.uint8).numpy()
             im = pilimg.fromarray(ndarr)
             im.save(f'./asset/{outdir}/out.png')
-    return im
+    return im, img_gens
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="FFHQ to Anime image translation and editing.")
@@ -127,12 +127,12 @@ if __name__ == "__main__":
     parser.add_argument("--outdir", type=str, default='results', help="Output directory for images generated.")
     parser.add_argument("--sefa", action="store_true", default=False, help="Set this flag if you wish to perform image editing.")
     parser.add_argument("--index", type=str, default="2", help="Index of eigen vector. Passed in as 2,3,4 etc.")
-    parser.add_argument("--degree", type=int, default=10, help="Degree of directions.")
+    parser.add_argument("--degree", type=int, default=6, help="Degree of directions.")
     parser.add_argument("--n_sample", type=int, default=1, help=".")
     parser.add_argument("--factor", type=str, default='networks/tl_fyp_factor.pt', help=".")
     parser.add_argument("--files", nargs="+", help="path to image files to be projected")
-    parser.add_argument("--e_ckpt", type=str, default='./networks/encoder_ffhq.pt', help="path to the encoder checkpoint")
-    parser.add_argument("--seed", type=int, default=None, help=".")
+    parser.add_argument("--e_ckpt", type=str, default='./networks/encoder_ffhq_encoder_200000.pt', help="path to the encoder checkpoint")
+    parser.add_argument("--seed", type=int, default=None, help="Manual seed for reprocudibility.")
     parser.add_argument("--output_name", type=str, default='result')
     parser.add_argument("--sefa_name", type=str, default='sefa')
     parser.add_argument("--source", type=str, default='networks/ffhq256.pt', help="File path and name to source generator network.")
@@ -144,12 +144,12 @@ if __name__ == "__main__":
     device = args.gpu
     trunc = args.trunc
     trunc_val = args.trunc_val
-    seed = args.seed
     index = args.index.split(',')
     degree = args.degree
     n_sample = args.n_sample
     edit_image = args.sefa
     network1 = args.source
+    seed = args.seed
     target_networks = args.target.split(',')
     index = [int(n) for n in index]
 
@@ -213,7 +213,7 @@ if __name__ == "__main__":
                 for deg in range(int(degree)):
                     direction = 0.5 * deg * eigvec[:, idx].unsqueeze(0)
 
-                    im = generate_image(latent1, direction)
+                    im, _ = generate_image(latent1, direction)
                     images.append(im)
                 images[0].save(f'./asset/{outdir}/explore-{args.sefa_name}-idx-{idx}.gif', save_all=True, append_images=images[1:], loop=0, duration=100)
         else: 
@@ -228,13 +228,21 @@ if __name__ == "__main__":
                     direction.append(0.5 * deg * eigvec[:, index[j]].unsqueeze(0))
                 direction = sum(direction)
 
-                im = generate_image(latent1, direction)
+                im, imgs_gens = generate_image(latent1, direction)
                 # im.save(f'./asset/{outdir}/{args.sefa_name}-{i}.png')
                 images.append(im)
                 i += 1
+                grid = make_grid(torch.cat(imgs_gens, 0),
+                            nrow=int(degree),
+                            normalize=True,
+                            range=(-1,1),
+                            )
+            ndarr = grid.mul(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to('cpu', torch.uint8).numpy()
+            im = pilimg.fromarray(ndarr)
+            im.save(f'./asset/{outdir}/{args.sefa_name}.png')
             images[0].save(f'./asset/{outdir}/{args.sefa_name}.gif', save_all=True, append_images=images[1:], loop=0, duration=100)
     else:
-        im = generate_image(latent1=latent1, latent2=latent2)
+        im, _ = generate_image(latent1=latent1, latent2=latent2)
         im.save(f'./asset/{outdir}/{args.output_name}.png')
     
     print('Complete, end of program.')
