@@ -1,4 +1,5 @@
-expr/
+__pycache__/
+expr*/
 asset/
 factor.pt
 latent.pt

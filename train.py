@@ -361,20 +361,12 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
         mouth_fake_pred = feature_discriminators['mouth'](get_feature(fake_img, 'mouth'))
         g_loss = g_nonsaturating_loss(fake_pred) + g_nonsaturating_loss(face_fake_pred) + g_nonsaturating_loss(eyes_fake_pred) + g_nonsaturating_loss(nose_fake_pred) + g_nonsaturating_loss(mouth_fake_pred)
 
-        ## perform perceptual loss
-        p_loss = perceptual_loss(loss_fn_vgg, real_img, fake_img)
+        ## perform perceptual loss (disabled temporarily)
+        # p_loss = perceptual_loss(loss_fn_vgg, real_img, fake_img)
+        # g_loss = g_loss
 
-        g_loss = g_loss + p_loss
         loss_dict["g"] = g_loss
 
-        # Method: Structure Loss
-        # if args.structure_loss >= 0:
-        #     for layer in range(args.structure_loss):
-        #         _, latent_med_sor = generator_source(noise, swap=True, swap_layer_num=layer+1)
-        #         _, latent_med_tar = generator(noise, swap=True, swap_layer_num=layer+1)
-        #         # set structure parameter in arguments source_impt. Default 1
-        #         g_loss = g_loss + (args.source_impt * F.mse_loss(latent_med_tar, latent_med_sor)) # for each layer calculate mse loss between source and target rgb ouputs
-                
         generator.zero_grad()
         g_loss.backward()
         g_optim.step()
@@ -483,6 +475,7 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
                     #     range=(-1, 1),
                     # )
 
+            # Save pytorch checkpoint
             if i % 2000 == 0:
                 torch.save(
                     {
@@ -508,174 +501,39 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="StyleGAN2 trainer")
     parser.add_argument("--path", type=str, help="path to the lmdb dataset")
     parser.add_argument('--arch', type=str, default='stylegan2', help='model architectures (stylegan2 | swagan)')
-    parser.add_argument(
-        "--iter", type=int, default=800000, help="total training iterations"
-    )
-    parser.add_argument(
-        "--batch", type=int, default=16, help="batch sizes for each gpus"
-    )
-    parser.add_argument(
-        "--n_sample",
-        type=int,
-        default=64,
-        help="number of the samples generated during training",
-    )
-    parser.add_argument(
-        "--size", type=int, default=256, help="image sizes for the model"
-    )
-    parser.add_argument(
-        "--r1", type=float, default=10, help="weight of the r1 regularization"
-    )
-    parser.add_argument(
-        "--path_regularize",
-        type=float,
-        default=2,
-        help="weight of the path length regularization",
-    )
-    parser.add_argument(
-        "--path_batch_shrink",
-        type=int,
-        default=2,
-        help="batch size reducing factor for the path length regularization (reduce memory consumption)",
-    )
-    parser.add_argument(
-        "--d_reg_every",
-        type=int,
-        default=16,
-        help="interval of the applying r1 regularization",
-    )
-    parser.add_argument(
-        "--g_reg_every",
-        type=int,
-        default=4,
-        help="interval of the applying path length regularization",
-    )
-    parser.add_argument(
-        "--mixing",
-        type=float,
-        default=0.9,
-        help="probability of latent code mixing"
-    )
-    parser.add_argument(
-        "--ckpt",
-        type=str,
-        default=None,
-        help="path to the checkpoints to resume training",
-    )
-    parser.add_argument(
-        "--lr",
-        type=float,
-        default=0.002,
-        help="learning rate")
-    parser.add_argument(
-        "--channel_multiplier",
-        type=int,
-        default=2,
-        help="channel multiplier factor for the model. config-f = 2, else = 1",
-    )
-    parser.add_argument(
-        "--wandb",
-        action="store_true",
-        help="use weights and biases logging"
-    )
-    parser.add_argument(
-        "--local_rank",
-        type=int,
-        default=0,
-        help="local rank for distributed training"
-    )
-    parser.add_argument(
-        "--augment",
-        action="store_true",
-        help="apply non leaking augmentation"
-    )
-    parser.add_argument(
-        "--augment_p",
-        type=float,
-        default=0,
-        help="probability of applying augmentation. 0 = use adaptive augmentation",
-    )
-    parser.add_argument(
-        "--ada_target",
-        type=float,
-        default=0.6,
-        help="target augmentation probability for adaptive augmentation",
-    )
-    parser.add_argument(
-        "--ada_length",
-        type=int,
-        default=500 * 1000,
-        help="target during to reach augmentation probability for adaptive augmentation",
-    )
-    parser.add_argument(
-        "--ada_every",
-        type=int,
-        default=256,
-        help="probability update interval of the adaptive augmentation",
-    )
-    parser.add_argument(
-        "--freezeD", 
-        type=int, 
-        help="number of freezeD layers",
-        default=-1
-    )
-    parser.add_argument(
-        "--freezeG", 
-        type=int, 
-        help="number of freezeG layers",
-        default=-1
-    )
-    parser.add_argument(
-        "--structure_loss", 
-        type=int, 
-        help="number of structure loss layers",
-        default=-1
-    )
-    parser.add_argument(
-        "--freezeStyle", 
-        type=int, 
-        help="freezeStyle",
-        default=-1
-    )
-    parser.add_argument(
-        "--freezeFC", 
-        action="store_true",
-        help="freezeFC",
-        default=False
-    )
-    # choose which gpu to use
-    parser.add_argument(
-        "--gpu",
-        default='cuda'
-    )
-    # layer swapping method
-    parser.add_argument(
-        "--layerSwap",
-        type=int,
-        default=0
-    )
-    # experiment directory
-    parser.add_argument(
-        "--expr_dir",
-        default='expr'
-    )
-    # source relative importance
-    parser.add_argument(
-        '--source_impt',
-        type=int,
-        default=1
-    )
-    # weight decay for AdamsW
-    parser.add_argument(
-        '--adam_weight_decay',
-        type=float,
-        default=0.1
-    )
+    parser.add_argument("--iter", type=int, default=800000, help="total training iterations")
+    parser.add_argument("--batch", type=int, default=16, help="batch sizes for each gpus")
+    parser.add_argument( "--n_sample",type=int,default=64,help="number of the samples generated during training",)
+    parser.add_argument("--size", type=int, default=256, help="image sizes for the model")
+    parser.add_argument("--r1", type=float, default=10, help="weight of the r1 regularization")
+    parser.add_argument("--path_regularize",type=float,default=2,help="weight of the path length regularization",)
+    parser.add_argument("--path_batch_shrink",type=int,default=2,help="batch size reducing factor for the path length regularization (reduce memory consumption)",)
+    parser.add_argument("--d_reg_every",type=int,default=16,help="interval of the applying r1 regularization",)
+    parser.add_argument("--g_reg_every",type=int,default=4,help="interval of the applying path length regularization",)
+    parser.add_argument("--mixing",type=float,default=0.9,help="probability of latent code mixing")
+    parser.add_argument("--ckpt",type=str,default=None,help="path to the checkpoints to resume training",)
+    parser.add_argument("--lr",type=float,default=0.002,help="learning rate")
+    parser.add_argument("--channel_multiplier",type=int,default=2,help="channel multiplier factor for the model. config-f = 2, else = 1",)
+    parser.add_argument("--wandb",action="store_true",help="use weights and biases logging")
+    parser.add_argument("--local_rank",type=int,default=0,help="local rank for distributed training")
+    parser.add_argument("--augment",action="store_true",help="apply non leaking augmentation")
+    parser.add_argument("--augment_p",type=float,default=0,help="probability of applying augmentation. 0 = use adaptive augmentation",)
+    parser.add_argument("--ada_target",type=float,default=0.6,help="target augmentation probability for adaptive augmentation",)
+    parser.add_argument("--ada_length",type=int,default=500 * 1000,help="target during to reach augmentation probability for adaptive augmentation",)
+    parser.add_argument("--ada_every",type=int,default=256,help="probability update interval of the adaptive augmentation",)
+    parser.add_argument("--freezeD", type=int, help="number of freezeD layers",default=-1)
+    parser.add_argument("--freezeG", type=int, help="number of freezeG layers",default=-1)
+    parser.add_argument("--structure_loss", type=int, help="number of structure loss layers",default=-1)
+    parser.add_argument("--freezeStyle", type=int, help="freezeStyle",default=-1)
+    parser.add_argument("--freezeFC", action="store_true",help="freezeFC",default=False)
+    parser.add_argument("--gpu",default='cuda')
+    parser.add_argument("--layerSwap",type=int,default=0)
+    parser.add_argument("--expr_dir",default='expr')
+    parser.add_argument('--source_impt',type=int,default=1)
+    parser.add_argument('--adam_weight_decay',type=float,default=0.1)
 
     args = parser.parse_args()
-
-    device = f'cuda:{args.gpu}'
-    # device = args.gpu
+    device = args.gpu
 
     n_gpu = int(os.environ["WORLD_SIZE"]) if "WORLD_SIZE" in os.environ else 1
     args.distributed = n_gpu > 1

@@ -61,6 +61,9 @@ def generate_image(latent=None, direction=None, latent1=None, latent2=None):
             ndarr = grid.mul(255).add_(0.5).clamp_(0, 255).permute(1, 2, 0).to('cpu', torch.uint8).numpy()
             im = pilimg.fromarray(ndarr)
         else:
+            image_name = 'report1'
+            project = torch.load(f"./{image_name}.pt")
+            latent1 = project[f'{image_name}']['latent'].cuda()
             if latent1 is None:
                 latent1 = torch.randn(1, 14, 512, device=device)
                 latent1 = g1.get_latent(latent1)
@@ -116,7 +119,7 @@ def generate_image(latent=None, direction=None, latent1=None, latent2=None):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="FFHQ to Anime image translation and editing.")
 
-    parser.add_argument("--gpu", type=str, default='cuda:1', help="Device id")
+    parser.add_argument("--gpu", type=str, default='cuda:0', help="Device id")
     parser.add_argument("--trunc", action="store_true", default=True, help="")
     parser.add_argument("--size", type=int, default=256, help="output image sizes of the generator")
     parser.add_argument("--trunc_val", type=float, default=0.7, help="")
