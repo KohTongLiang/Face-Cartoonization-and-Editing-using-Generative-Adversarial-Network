@@ -33,10 +33,14 @@ The codebase is based of the following repositories:
 ## Pretrained models
 
 | Model        | Description                                    | Link |
-| ------------ |:----------------------------------------------:|:----------------------------------------------:|
+| ------------ |----------------------------------------------|----------------------------------------------|
 | FFHQ 256x256 | Original model trained on 256x256 FFHQ images. | https://drive.google.com/file/d/12zPg8T24L0ocIe_2MwAVh673C-VAbW4_/view?usp=sharing |
 | Anime model  | Model trained with proposed architecture.      | https://drive.google.com/file/d/12mL7N3_lIKwgp-_QqEs3DjPneNEhLG74/view?usp=sharing | 
 | Factor file  | Factor file produced from closed-form factorisation | https://drive.google.com/file/d/12sJ17-7LEqZzkIQKHY34ax8qUPwPLCfZ/view?usp=sharing |
+
+## Dataset
+
+The anime images are downloaded from: https://www.kaggle.com/datasets/subinium/highresolution-anime-face-dataset-512x512
 
 ## Environment
 
@@ -89,7 +93,7 @@ python edit_image.py \
 List of index known to alter corresponding features:
 
 | Index | Features |
-|--------------|:---:|
+|--------------|---|
 | 0,7,16,18,20,23,24,31,34,35,36,37 | Hair and Face Colour |
 | 1,11,12,28 | Hair Colour |
 | 2,3,17,19 | Face |
@@ -113,5 +117,5 @@ python train.py --batch BATCH_SIZE LMDB_PATH
  --ckpt=ffhq256.pt \
  --augment \
  --path=LMDB_PATH \
- --expr_dir=Experiment_Directory
+ --expr_dir=EXPERIMENT_DIRECTORY
  ```
