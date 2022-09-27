@@ -5,7 +5,7 @@ The aim of this project is to translate a face from a real human face into a car
 Project Report: https://hdl.handle.net/10356/156440
 
 
-The codebase is based of the following repositories:
+The codebase is based off the following repositories:
 - [rosinality/stylegan2-pytorch](https://github.com/rosinality/stylegan2-pytorch)
 - [happy-jihye/Cartoon-StyleGAN](https://github.com/happy-jihye/Cartoon-StyleGAN)
 
