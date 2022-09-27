@@ -1,4 +1,4 @@
-__pycache__/
+__pycache__
 expr*/
 asset/
 factor.pt
@@ -7,3 +7,6 @@ project.pt
 training/
 training-2/
 networks/
+datasets
+models
+*.sh

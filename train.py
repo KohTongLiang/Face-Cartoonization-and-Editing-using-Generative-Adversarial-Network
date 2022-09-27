@@ -1,9 +1,7 @@
 import argparse
-from ctypes import resize
 import math
 import random
 import os
-import numpy as np
 import lpips
 import torch
 from torch import nn, autograd, optim
@@ -216,7 +214,7 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
         ada_augment = AdaptiveAugment(args.ada_target, args.ada_length, 8, device)
 
     # for sampling an image
-    # sample_z = torch.randn(args.n_sample, args.latent, device=device)
+    sample_z = torch.randn(args.n_sample, args.latent, device=device)
 
     # main training loop
     for idx in pbar:
@@ -361,9 +359,9 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
         mouth_fake_pred = feature_discriminators['mouth'](get_feature(fake_img, 'mouth'))
         g_loss = g_nonsaturating_loss(fake_pred) + g_nonsaturating_loss(face_fake_pred) + g_nonsaturating_loss(eyes_fake_pred) + g_nonsaturating_loss(nose_fake_pred) + g_nonsaturating_loss(mouth_fake_pred)
 
-        ## perform perceptual loss (disabled temporarily)
-        # p_loss = perceptual_loss(loss_fn_vgg, real_img, fake_img)
-        # g_loss = g_loss
+        # perceptual loss
+        p_loss = perceptual_loss(loss_fn_vgg, real_img, fake_img)
+        g_loss = g_loss + p_loss
 
         loss_dict["g"] = g_loss
 
@@ -463,20 +461,20 @@ def train(args, loader, generator, generator_source, discriminator, g_optim, d_o
                 )
 
             # Sampling images
-            # if i % 100 == 0:
-            #     with torch.no_grad():
-            #         g_ema.eval()
-            #         sample, _ = g_ema([sample_z])
-                    # utils.save_image(
-                    #     sample,
-                    #     f"{save_dir}/{str(i).zfill(6)}.png",
-                    #     nrow=int(args.n_sample ** 0.5),
-                    #     normalize=True,
-                    #     range=(-1, 1),
-                    # )
+            if i % 1000 == 0:
+                with torch.no_grad():
+                    g_ema.eval()
+                    sample, _ = g_ema([sample_z])
+                    utils.save_image(
+                        sample,
+                        f"{save_dir}/{str(i).zfill(6)}.png",
+                        nrow=int(args.n_sample ** 0.5),
+                        normalize=True,
+                        range=(-1, 1),
+                    )
 
             # Save pytorch checkpoint
-            if i % 2000 == 0:
+            if i % 1000 == 0:
                 torch.save(
                     {
                         "g": g_module.state_dict(),

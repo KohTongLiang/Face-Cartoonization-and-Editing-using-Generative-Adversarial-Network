@@ -1,46 +1,117 @@
-## Trained Models
+# Face Cartoonization and Editing using Generative Adversarial Network
 
-FFHQ: https://drive.google.com/file/d/1NrIQSs0DLeBVMOegg7QUHb08qFgDQy8_/view?usp=sharing
+The aim of this project is to translate a face from a real human face into a cartoon face. The translation is achieved through the use of multiple discriminators used to predict localised regions of the face to guide the generator to generate stylised faces with lesser artifacts and with better retention of original identity.
 
-NaverWebtoon Structure Loss: https://drive.google.com/file/d/1kJ39AW6k_dlGYdh69ntOE7Jjj2ijivV_/view?usp=sharing
-
-Anime Structure Loss (06-08-2021): https://drive.google.com/file/d/18AOOhYBHjmqyrEUNlIeMxfkQsh4HR927/view?usp=sharing
-
-Store the .pt files in /networks
-
-## Setting up config
-
-Modify config file in /config/config.json
-- cuda: device to run on
-- outdir: outdput directory where output images will be found
-- number_of_img: number of image to generate
-- number_of_step: number of step to take for each interpolation
-- swap: layer swapping
-- swap_layer_num: which layer to perform layer swapping on
-- networks: target networks to use for image generation
-e.g) ["NaverWebtoon_StructureLoss", "Danbooru_Structure_Loss4", "Custom_NaverWebtoon"]
+Project Report: https://hdl.handle.net/10356/156440
 
 
-## Running the program
+The codebase is based of the following repositories:
+- [rosinality/stylegan2-pytorch](https://github.com/rosinality/stylegan2-pytorch)
+- [happy-jihye/Cartoon-StyleGAN](https://github.com/happy-jihye/Cartoon-StyleGAN)
 
-### Image generation (example)
-1) setup config file
-2) run: python generate-image.py mode config_file_name # mode can be i2i, sample_image, style_mixing
 
+## Architecture
+
+![Architecture](./figures/multi-d-architecture.PNG)
+
+## Results
+
+### Generation
+
+![Generated Anime faces](./figures/vanilla.jpg)
+
+### Simple translations
+
+![Translated faces](./figures/examples.png)
+
+### Image Editing
+
+![Image editing](./figures/sefa.gif)
+
+![Image editing](./figures/image_editing.png)
+
+## Pretrained models
+
+| Model        | Description                                    | Link |
+| ------------ |:----------------------------------------------:|:----------------------------------------------:|
+| FFHQ 256x256 | Original model trained on 256x256 FFHQ images. | https://drive.google.com/file/d/12zPg8T24L0ocIe_2MwAVh673C-VAbW4_/view?usp=sharing |
+| Anime model  | Model trained with proposed architecture.      | https://drive.google.com/file/d/12mL7N3_lIKwgp-_QqEs3DjPneNEhLG74/view?usp=sharing | 
+| Factor file  | Factor file produced from closed-form factorisation | https://drive.google.com/file/d/12sJ17-7LEqZzkIQKHY34ax8qUPwPLCfZ/view?usp=sharing |
+
+## Environment
+
+Install dependencies from requirements.txt.
+
+```bash
+Run pip install -r requirements.txt
+```
+
+Alternatively, build docker image with Dockerfile provided.
+
+## Image generation (example)
+
+```bash
+python generate_image.py \
+--n_img NUMBER_OF_IMAGES_YOU_WANT \
+--swap \
+--swap_num 2 \
+--source FFHQ_MODEL.pt \
+--target TRAINED_MODEL.pt \
+--outdir YOUR_OUTPUT_DIRECTORY \
+--output_name NAME_OF_OUTPUT_IMAGE
+```
+
+### Image editing
+
+1) Perform closed form factorisation on trained model
+
+```bash
+python closed_form_factorization.py \
+--factor_name YOUR_FACTOR_NAME.pt \
+--ckpt TRAINED_MODEL.pt
+```
+
+2) Run code
+
+```bash
+python edit_image.py \
+--n_img 8 \
+--swap \
+--swap_num 2 \
+--source FFHQ_MODEL.pt \
+--target TRAINED_MODEL.pt \
+--factor FACTOR.pt \
+--outdir DIR \
+--index INDEX,INDEX,... \
+--degree DEGREE
+```
+
+List of index known to alter corresponding features:
+
+| Index | Features |
+|--------------|:---:|
+| 0,7,16,18,20,23,24,31,34,35,36,37 | Hair and Face Colour |
+| 1,11,12,28 | Hair Colour |
+| 2,3,17,19 | Face |
+| 4,6 | Directions (to right) |
+| 5 | Directions (to left) |
+| 9 | Directions (to top right), hair colour |
+| 10,25,32,33 | Hair colour, facial expression |
+| 13,14,15 | Hair colour, hair style |
+| 21,22 | Hair thickness |
+| 26,27,29,30,39,40,41,42,45,53 | Facial expression |
 
 ## Training
 
 ### StyleGAN2
+
 python train.py --batch BATCH_SIZE LMDB_PATH
 
-ex) python train.py --batch=8 --ckpt=ffhq256.pt --freezeG=4 --freezeD=3 --augment --path=LMDB_PATH --expr_dir=Experiment_Directory --gpu=CUDA:0
-
-### StructureLoss
-ex) python train.py --batch=8 --ckpt=ffhq256.pt --structure_loss=2 --freezeD=3 --augment --path=LMDB_PATH --expr_dir=Experiment_Directory --gpu=CUDA:0
-
-### FreezeSG
-ex) python train.py --batch=8 --ckpt=ffhq256.pt --freezeStyle=2 --freezeG=4 --freezeD=3 --augment --path=LMDB_PATH --expr_dir=Experiment_Directory --gpu=CUDA:0
-
-## Reference
-
-- [happy-jihye/Cartoon-StyleGAN](https://github.com/happy-jihye/Cartoon-StyleGAN)
+```babsh
+ python train.py \
+ --batch=8 \
+ --ckpt=ffhq256.pt \
+ --augment \
+ --path=LMDB_PATH \
+ --expr_dir=Experiment_Directory
+ ```
